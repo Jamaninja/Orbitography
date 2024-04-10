@@ -3,14 +3,14 @@ vm = orekit.initVM()
 from orekit.pyhelpers import setup_orekit_curdir, absolutedate_to_datetime
 setup_orekit_curdir()
 
-from org.orekit.data import DataProvidersManager, ZipJarCrawler
-from org.orekit.frames import FramesFactory, TopocentricFrame
-from org.orekit.bodies import OneAxisEllipsoid, GeodeticPoint
-from org.orekit.time import TimeScalesFactory, AbsoluteDate, DateTimeComponents
-from org.orekit.utils import IERSConventions, Constants
+from org.orekit.data import DataProvidersManager, ZipJarCrawler # type: ignore
+from org.orekit.frames import FramesFactory, TopocentricFrame # type: ignore
+from org.orekit.bodies import OneAxisEllipsoid, GeodeticPoint # type: ignore
+from org.orekit.time import TimeScalesFactory, AbsoluteDate, DateTimeComponents # type: ignore
+from org.orekit.utils import IERSConventions, Constants # type: ignore
 
-from org.orekit.propagation.analytical.tle import TLE, TLEPropagator
-from java.io import File
+from org.orekit.propagation.analytical.tle import TLE, TLEPropagator # type: ignore
+from java.io import File # type: ignore
 
 from math import radians, pi
 import pandas as pd
@@ -150,6 +150,24 @@ for i in sat_data:
                                     text = text
                                     )
                        )
+
+'''
+proximity_bound = 10e3 #meters
+#Detecting collisions
+    #First, determine which satellites are within a 10km box
+while True:
+    a,b = 0,1
+    sat_a, sat_b = sat_data[a], sat_data[b]
+    if abs(prop_data[sat_a]['x'] - prop_data[sat_b]['x']) > proximity_bound:
+        break
+    elif abs(prop_data[sat_a]['y'] - prop_data[sat_b]['y']) > proximity_bound:
+        break
+    elif abs(prop_data[sat_a]['z'] - prop_data[sat_b]['z']) > proximity_bound:
+        break
+    else:
+        #calculate distance between sat_a and sat_b
+        print()
+'''
 
 trace_earth = plot_Earth(earth_texture)
 trace_background = plot_Background(earth_texture)
