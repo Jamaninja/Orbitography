@@ -75,8 +75,9 @@ sat_data, tles = {}, fetch_latest_tles(norad_ids)
 
 for norad_id, (source, tle) in tles.items():
     sat_id = tle[1].split(" ")[2]
-    sat_data[sat_id] = [TLE(tle[1],tle[2]),tle[0]]
+    sat_data[sat_id] = {'TLE': TLE(tle[1],tle[2]), 'Name': tle[0]}
 
+print(sat_data)
 #Define Earth and inertial reference frame
 #inertial_frame = FramesFactory.getITRF(IERSConventions.IERS_2010, True) #Rotating inertial reference frame
 inertial_frame = FramesFactory.getEME2000() #Nonrotating inertial reference frame
@@ -94,11 +95,11 @@ now = datetime.now(UTC)
 start_date = AbsoluteDate(now.year, now.month, now.day, now.hour, now.minute, 0.0, TimeScalesFactory.getUTC())
 
 for i in sat_data:
-    epoch = sat_data.get(i)[0].getDate()
+    epoch = sat_data.get(i)['TLE'].getDate()
     epoch_delta = timedelta(seconds=start_date.durationFrom(epoch))
 
     extrap_date = start_date
-    propagator = TLEPropagator.selectExtrapolator(sat_data.get(i)[0])
+    propagator = TLEPropagator.selectExtrapolator(sat_data.get(i)['TLE'])
     pvs = []
     final_date = extrap_date.shiftedBy(60 * 60 * 24 * propagation_days) #seconds
 
@@ -123,7 +124,7 @@ for i in sat_data:
         #Latitude & longitude
         #Date & time (UTC)
     text = []
-    name = sat_data.get(i)[1]
+    name = sat_data.get(i)['Name']
     lat_lambda = lambda x: 'N' if x >= 0 else 'S'
     lon_lambda = lambda x: 'E' if x >= 0 else 'W'
 
