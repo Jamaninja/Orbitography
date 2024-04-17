@@ -1,6 +1,6 @@
 import orekit
 vm = orekit.initVM()
-from orekit.pyhelpers import setup_orekit_curdir, absolutedate_to_datetime
+from orekit.pyhelpers import setup_orekit_curdir, absolutedate_to_datetime, datetime_to_absolutedate
 setup_orekit_curdir()
 
 from org.orekit.data import DataProvidersManager, ZipJarCrawler # type: ignore
@@ -8,47 +8,64 @@ from org.orekit.frames import FramesFactory, TopocentricFrame # type: ignore
 from org.orekit.bodies import OneAxisEllipsoid, GeodeticPoint # type: ignore
 from org.orekit.time import TimeScalesFactory, AbsoluteDate, DateTimeComponents # type: ignore
 from org.orekit.utils import IERSConventions, Constants, PVCoordinates # type: ignore
-from org.orekit.orbits import CartesianOrbit, OrbitType, PositionAngleType # type: ignore
-
+from org.orekit.orbits import CartesianOrbit, OrbitType, PositionAngleType, KeplerianOrbit, CircularOrbit, EquinoctialOrbit # type: ignore
 from org.orekit.propagation.analytical.tle import TLE, TLEPropagator # type: ignore
 from org.orekit.propagation import StateCovariance # type: ignore
 from org.orekit.ssa.collision.shorttermencounter.probability.twod import Patera2005 # type: ignore
 from org.hipparchus.geometry.euclidean.threed import Vector3D # type: ignore
+from org.hipparchus.linear import MatrixUtils # type: ignore
+from org.orekit.ssa.metrics import ProbabilityOfCollision # type: ignore
 from java.io import File # type: ignore
 
-import datetime, random
-import numpy as np
+from random import random
 
-state1 = [7000000.0, 0.0, 0.0, 0.0, 7000.0, 0.0]
-state2 = [7100000.0, 0.0, 0.0, 0.0, 7000.1, 0.0]
+
+state1 = [700001.0, 0.0, 0.0, 0.0, 7000.24, 0.0]
+state2 = [700000.0, 0.0, 0.0, 0.0, 7000.10, 0.0]
 tca = AbsoluteDate(2020, 1, 1, 0, 0, 0.0, TimeScalesFactory.getUTC())
 
-orbit1 = CartesianOrbit(PVCoordinates(Vector3D(state1[0], state1[1], state1[2]),
-                        Vector3D(state1[3], state1[4], state1[5])),
-                        FramesFactory.getEME2000(),
+itrf = FramesFactory.getITRF(IERSConventions.IERS_2010, False)
+eme = FramesFactory.getEME2000()
+
+orbit1 = CartesianOrbit(PVCoordinates(Vector3D(float(state1[0]), float(state1[1]), float(state1[2])),
+                        Vector3D(float(state1[3]), float(state1[4]), float(state1[5]))),
+                        eme,
                         tca,
                         Constants.WGS84_EARTH_MU)
 
-orbit2 = CartesianOrbit(PVCoordinates(Vector3D(state2[0], state2[1], state2[2]),
-                        Vector3D(state2[3], state2[4], state2[5])),
-                        FramesFactory.getEME2000(),
+orbit2 = CartesianOrbit(PVCoordinates(Vector3D(float(state2[0]), float(state2[1]), float(state2[2])),
+                        Vector3D(float(state2[3]), float(state2[4]), float(state2[5]))),
+                        eme,
                         tca,
                         Constants.WGS84_EARTH_MU)
 
 radius1 = 1.0
 radius2 = 1.0
 
-cov_mat1 = np.zeros(shape=(6,6))
-cov_mat2 = np.zeros(shape=(6,6))
+cov_mat1 = MatrixUtils.createRealMatrix(6,6)
+cov_mat2 = MatrixUtils.createRealMatrix(6,6)
 
 for i in range(6):
-    for j in range(6):
-        cov_mat1[i,j] = random.random()
-        cov_mat2[i,j] = random.random()
+    cov = random()
+    cov_mat1.setEntry(i, i, cov)
 
-covariance1 = StateCovariance(cov_mat1, tca, FramesFactory.getEME2000(), OrbitType.CARTESIAN, PositionAngleType.TRUE)
-covariance2 = StateCovariance(cov_mat2, tca, FramesFactory.getEME2000(), OrbitType.CARTESIAN, PositionAngleType.TRUE)
+    cov = random()
+    cov_mat2.setEntry(i, i, cov)
 
-# Patera2005.compute(Orbit primaryAtTCA, StateCovariance primaryCovariance, double primaryRadius, Orbit secondaryAtTCA, StateCovariance secondaryCovariance, double secondaryRadius)
-poc_result = Patera2005().compute(orbit1, covariance1, radius1, orbit2, covariance2, radius2)
-print(f"Probability of collision: {poc_result}")
+    for j in range(i+1, 6):
+        cov = random()
+        cov_mat1.setEntry(i, j, cov)
+        cov_mat1.setEntry(j, i, cov)
+
+        cov = random()
+        cov_mat2.setEntry(i, j, cov)
+        cov_mat2.setEntry(j, i, cov)
+
+covariance1 = StateCovariance(cov_mat1, tca, itrf, OrbitType.CARTESIAN, PositionAngleType.TRUE)
+covariance2 = StateCovariance(cov_mat2, tca, itrf, OrbitType.CARTESIAN, PositionAngleType.TRUE)
+
+try:
+    poc_result = Patera2005().compute(orbit1, covariance1, orbit2, covariance2, radius1 + radius2, 1e-10)
+    print("Probability of collision: {:.4f}%".format(100*poc_result.getValue()))
+except:
+    print('Probability of collision: 0.00%')
