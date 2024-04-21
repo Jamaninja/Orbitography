@@ -75,6 +75,35 @@ def getEpochDelta(sat):
     epoch = sat_data.get(sat)['TLE'].getDate()
     return timedelta(seconds = getNow().durationFrom(epoch))
 
+def TLE_Propagator(sat, prop_days, prop_res):
+    """
+    Propagates the satellite's orbit SGP4/SDP4
+
+    Args:
+        sat: string
+            The ID of the desired satellite
+        
+        prop_days: float
+            For how many days forward should the orbit be propagated
+        
+        prop_res: float
+            How many seconds between PV updates
+
+    Returns:
+        Array of position and velocity coordinates
+    """
+        
+    extrap_date = getNow()
+    propagator = TLEPropagator.selectExtrapolator(sat_data.get(sat)['TLE'])
+    pvs = []
+    final_date = extrap_date.shiftedBy(60 * 60 * 24 * prop_days) #seconds
+
+    while (extrap_date.compareTo(final_date) <= 0.0):
+        pvs.append(propagator.getPVCoordinates(extrap_date, inertial_frame))
+        extrap_date = extrap_date.shiftedBy(prop_res)
+    
+    return pvs
+
 import orekit
 vm = orekit.initVM()
 from orekit.pyhelpers import setup_orekit_curdir, absolutedate_to_datetime
@@ -128,20 +157,8 @@ earth = OneAxisEllipsoid(Constants.WGS84_EARTH_EQUATORIAL_RADIUS,
 
 ###############################################################################################################
 prop_data, trace_orbit = {},[]
-propagation_days = 0.25 #days, float
+propagation_days = 1.0 #days, float
 propagation_resolution = 60.0 #seconds, float
-
-def TLE_Propagator(sat, prop_days, prop_res):
-    extrap_date = getNow()
-    propagator = TLEPropagator.selectExtrapolator(sat_data.get(sat)['TLE'])
-    pvs = []
-    final_date = extrap_date.shiftedBy(60 * 60 * 24 * prop_days) #seconds
-
-    while (extrap_date.compareTo(final_date) <= 0.0):
-        pvs.append(propagator.getPVCoordinates(extrap_date, inertial_frame))
-        extrap_date = extrap_date.shiftedBy(prop_res)
-    
-    return pvs
 
 for sat in sat_data:
     pvs = TLE_Propagator(sat, propagation_days, propagation_resolution)
