@@ -1,6 +1,6 @@
 import orekit
 vm = orekit.initVM()
-from orekit.pyhelpers import setup_orekit_curdir, absolutedate_to_datetime, datetime_to_absolutedate
+from orekit.pyhelpers import setup_orekit_curdir
 setup_orekit_curdir()
 
 from org.orekit.data import DataProvidersManager, ZipJarCrawler # type: ignore
