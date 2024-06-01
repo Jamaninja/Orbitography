@@ -27,11 +27,12 @@ from PIL import Image
 
 class OrbitographyFunctions:
 
-    def __init__(self, sat_data, time_now):
+    def __init__(self, sat_data):
         self.sat_data   = sat_data
-        self.time_now   = time_now
         self.eme2000    = FramesFactory.getEME2000()
         self.itrf       = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
+        now             = datetime.now(UTC)
+        self.time_now   = AbsoluteDate(now.year, now.month, now.day, now.hour, now.minute + 1, 0.0, TimeScalesFactory.getUTC())
 
     def createSpheroid(self, texture, equatorial_radius, flattening=0):
         """
@@ -122,6 +123,24 @@ class OrbitographyFunctions:
                                 Constants.WGS84_EARTH_FLATTENING, 
                                 frame)
 
+    def initialOrbitTLE(self, sat_tle):
+        """
+        Initialises a Cartesian orbit of an object, using TLE data
+
+        Args:
+            sat_tle: 
+                TLE data of desired satellite
+        
+        Returns:
+            Cartesian orbit of desired satellite at epoch
+        """
+        propagator = TLEPropagator.selectExtrapolator(sat_tle)
+        epoch = sat_tle.getDate()
+        pv = propagator.getPVCoordinates(epoch, self.eme2000)
+        initial_orbit = CartesianOrbit(pv, self.eme2000, epoch, Constants.WGS84_EARTH_MU)
+
+        return initial_orbit
+
     def propagateTLE(self, sat, prop_dur, prop_res):
         """
         Propagates the satellite's orbit using SGP4/SDP4
@@ -150,24 +169,6 @@ class OrbitographyFunctions:
             extrap_date = extrap_date.shiftedBy(prop_res)
         
         return pvs
-
-    def initialOrbitTLE(self, sat_tle):
-        """
-        Initialises a Cartesian orbit of an object, using TLE data
-
-        Args:
-            sat_tle: 
-                TLE data of desired satellite
-        
-        Returns:
-            Cartesian orbit of desired satellite at epoch
-        """
-        propagator = TLEPropagator.selectExtrapolator(sat_tle)
-        epoch = sat_tle.getDate()
-        pv = propagator.getPVCoordinates(epoch, self.eme2000)
-        initial_orbit = CartesianOrbit(pv, self.eme2000, epoch, Constants.WGS84_EARTH_MU)
-
-        return initial_orbit
 
     def propagateNumerical(self, sat, prop_dur, prop_res):
         """
