@@ -81,44 +81,58 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 
-from Orbitography_Functions import *
+from Orbitography_Functions import OrbitographyFunctions
 
 ##############################################################################################################
 
-now = datetime.now(UTC)
-time_now = AbsoluteDate(now.year, now.month, now.day, now.hour, now.minute + 1, 0.0, TimeScalesFactory.getUTC())
-
-of = OrbitographyFunctions(sat_data=sat_data, time_now=time_now)
-
 # Define Earth and inertial reference frames
-eme2000 = FramesFactory.getEME2000()
-itrf    = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
+eme2000     = FramesFactory.getEME2000()
+itrf        = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
 
-id_st = os.getenv("id_st")
-pass_st = os.getenv("pass_st")
-st = SpaceTrackClient(identity=id_st, password=pass_st)
+id_st       = os.getenv("id_st")
+pass_st     = os.getenv("pass_st")
+st          = SpaceTrackClient(identity=id_st, password=pass_st)
 
-prop_data, trace_orbit = {},[]
+now         = datetime.now(UTC)
+if now.minute != 59:
+    time_now = AbsoluteDate(now.year, now.month, now.day, now.hour, now.minute + 1, 0.0, TimeScalesFactory.getUTC())
+elif now.hour != 23:
+    time_now = AbsoluteDate(now.year, now.month, now.day, now.hour + 1, 0, 0.0, TimeScalesFactory.getUTC())
+else:
+    time_now = AbsoluteDate(now.year, now.month, now.day + 1, 0, 0, 0.0, TimeScalesFactory.getUTC())
 
 for sat in sat_data:
     tle = st.tle(norad_cat_id=sat_data[sat]['norad_id'], epoch='<{}'.format(time_now), orderby='epoch desc', limit=1, format='tle').split('\n')
     sat_data[sat]['TLE'] = TLE(tle[0],tle[1])
 
-    #pvs = propagateTLE(sat, prop_dur=1.0, prop_res=60.0)
+of = OrbitographyFunctions(sat_data=sat_data)
+
+#prop_data, trace_orbit = {},[]
+prop_data = pd.DataFrame()
+trace_orbit = []
+
+for sat in sat_data:
+    #pvs = of.propagateTLE(sat, prop_dur=1.0, prop_res=60.0)
     pvs = of.propagateNumerical(sat, prop_dur=.25, prop_res=60.0)
 
     # Extracts position-velocity data and creates database of calculated values
-    prop_data[sat]                = pd.DataFrame(data=pvs, columns=['pv'])
-    prop_data[sat]['Position']    = prop_data[sat]['pv'].apply(lambda x: x.getPosition())
-    prop_data[sat]['x']           = prop_data[sat]['Position'].apply(lambda pos: pos.x)
-    prop_data[sat]['y']           = prop_data[sat]['Position'].apply(lambda pos: pos.y)
-    prop_data[sat]['z']           = prop_data[sat]['Position'].apply(lambda pos: pos.z)
-    prop_data[sat]['Radius']      = prop_data[sat]['Position'].apply(lambda pos: ((pos.x)**2 + (pos.y)**2 + (pos.z)**2)**0.5)
-    prop_data[sat]['datetime']    = prop_data[sat]['pv'].apply(lambda x: absolutedate_to_datetime(x.getDate()))
-    prop_data[sat]['groundpoint'] = prop_data[sat]['pv'].apply(lambda pv: of.earth(eme2000).transform(pv.position, eme2000, pv.date))
-    prop_data[sat]['latitude']    = np.degrees(prop_data[sat].groundpoint.apply(lambda gp: gp.latitude))
-    prop_data[sat]['longitude']   = np.degrees(prop_data[sat].groundpoint.apply(lambda gp: gp.longitude))
+    prop_data[sat]                  = {}
+    prop_data.loc['pv', sat]        = pvs
+    prop_data.loc['position', sat]  = [pv.getPosition() for pv in prop_data.loc['pv', sat]]
+    prop_data.loc['x', sat]         = [pos.x for pos in prop_data.loc['position', sat]]
+    prop_data.loc['y', sat]         = [pos.y for pos in prop_data.loc['position', sat]]
+    prop_data.loc['z', sat]         = [pos.z for pos in prop_data.loc['position', sat]]
+    prop_data.loc['radius', sat]    = [((pos.x)**2 + (pos.y)**2 + (pos.z)**2)**0.5 for pos in prop_data.loc['position', sat]] 
+    prop_data.loc['datetime', sat]  = [absolutedate_to_datetime(pv.getDate()) for pv in prop_data.loc['pv', sat]]
+    prop_data.loc['groundpoint', sat] = [of.earth(eme2000).transform(pv.position, eme2000, pv.date) for pv in prop_data.loc['pv', sat]]
+    prop_data.loc['latitude', sat]  = np.degrees([gp.latitude for gp in prop_data.loc['groundpoint', sat]])
+    prop_data.loc['longitude', sat] = np.degrees([gp.longitude for gp in prop_data.loc['groundpoint', sat]])
+
+#prop_dataframe = pd.DataFrame(prop_data)
+prop_data.to_csv('Propagation_Data.csv', index=False)
     
+for sat in sat_data:
+
     # Defines label text when hovering over orbits and creates orbit traces
         # Satellite name
         # Latitude & longitude
