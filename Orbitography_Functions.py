@@ -32,7 +32,12 @@ class OrbitographyFunctions:
         self.eme2000    = FramesFactory.getEME2000()
         self.itrf       = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
         now             = datetime.now(UTC)
-        self.time_now   = AbsoluteDate(now.year, now.month, now.day, now.hour, now.minute + 1, 0.0, TimeScalesFactory.getUTC())
+        if now.minute != 59:
+            self.time_now = AbsoluteDate(now.year, now.month, now.day, now.hour, now.minute + 1, 0.0, TimeScalesFactory.getUTC())
+        elif now.hour != 23:
+            self.time_now = AbsoluteDate(now.year, now.month, now.day, now.hour + 1, 0, 0.0, TimeScalesFactory.getUTC())
+        else:
+            self.time_now = AbsoluteDate(now.year, now.month, now.day + 1, 0, 0, 0.0, TimeScalesFactory.getUTC())
 
     def createSpheroid(self, texture, equatorial_radius, flattening=0):
         """
