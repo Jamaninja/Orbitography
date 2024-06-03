@@ -107,29 +107,24 @@ for sat in sat_data:
 
 of = OrbitographyFunctions(sat_data=sat_data)
 
-#prop_data, trace_orbit = {},[]
-prop_data = pd.DataFrame()
-trace_orbit = []
+prop_data, trace_orbit = {},[]
 
 for sat in sat_data:
-    #pvs = of.propagateTLE(sat, prop_dur=1.0, prop_res=60.0)
-    pvs = of.propagateNumerical(sat, prop_dur=.25, prop_res=60.0)
-
+    prop_data.update({sat : {}})
     # Extracts position-velocity data and creates database of calculated values
-    prop_data[sat]                  = {}
-    prop_data.loc['pv', sat]        = pvs
-    prop_data.loc['position', sat]  = [pv.getPosition() for pv in prop_data.loc['pv', sat]]
-    prop_data.loc['x', sat]         = [pos.x for pos in prop_data.loc['position', sat]]
-    prop_data.loc['y', sat]         = [pos.y for pos in prop_data.loc['position', sat]]
-    prop_data.loc['z', sat]         = [pos.z for pos in prop_data.loc['position', sat]]
-    prop_data.loc['radius', sat]    = [((pos.x)**2 + (pos.y)**2 + (pos.z)**2)**0.5 for pos in prop_data.loc['position', sat]] 
-    prop_data.loc['datetime', sat]  = [absolutedate_to_datetime(pv.getDate()) for pv in prop_data.loc['pv', sat]]
-    prop_data.loc['groundpoint', sat] = [of.earth(eme2000).transform(pv.position, eme2000, pv.date) for pv in prop_data.loc['pv', sat]]
-    prop_data.loc['latitude', sat]  = np.degrees([gp.latitude for gp in prop_data.loc['groundpoint', sat]])
-    prop_data.loc['longitude', sat] = np.degrees([gp.longitude for gp in prop_data.loc['groundpoint', sat]])
+    prop_data[sat].update({'pv'         : of.propagateNumerical(sat, prop_dur=.25, prop_res=60.0)})
+    prop_data[sat].update({'position'   : [pv.getPosition() for pv in prop_data[sat]['pv']]})
+    prop_data[sat].update({'x'          : [pos.x for pos in prop_data[sat]['position']],
+                           'y'          : [pos.y for pos in prop_data[sat]['position']],
+                           'z'          : [pos.z for pos in prop_data[sat]['position']]})
+    prop_data[sat].update({'radius'     : [np.sqrt(x**2 + y**2 + z**2) for x, y, z in zip(prop_data[sat]['x'], prop_data[sat]['y'], prop_data[sat]['z'])],
+                           'datetime'   : [absolutedate_to_datetime(pv.getDate()) for pv in prop_data[sat]['pv']],
+                           'groundpoint': [of.earth(eme2000).transform(pv.position, eme2000, pv.date) for pv in prop_data[sat]['pv']]})
+    prop_data[sat].update({'latitude'   : np.degrees([gp.latitude for gp in prop_data[sat]['groundpoint']]),
+                           'longitude'  : np.degrees([gp.longitude for gp in prop_data[sat]['groundpoint']])})
 
-#prop_dataframe = pd.DataFrame(prop_data)
-prop_data.to_csv('Propagation_Data.csv', index=False)
+prop_dataframe = pd.DataFrame(prop_data)
+prop_dataframe.to_csv('Propagation_Data.csv', index=False)
     
 for sat in sat_data:
 
@@ -144,7 +139,7 @@ for sat in sat_data:
     lat_lambda = lambda x: 'N' if x >= 0 else 'S'
     lon_lambda = lambda x: 'E' if x >= 0 else 'W'
 
-    for lat, lon, r, dt in zip(prop_data[sat]['latitude'], prop_data[sat]['longitude'], prop_data[sat]['Radius'], prop_data[sat]['datetime']):    
+    for lat, lon, r, dt in zip(prop_data[sat]['latitude'], prop_data[sat]['longitude'], prop_data[sat]['radius'], prop_data[sat]['datetime']):    
         text.append('''{}<br>{}
 <br>{:02}° {:02}\' {:02.4f}\" {}, {:02}° {:02}\' {:02.4f}\" {}
 <br>Radius (Alt): {:.2f} km ({:.2f} km)<br>{}
