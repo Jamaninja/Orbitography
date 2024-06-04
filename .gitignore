@@ -1,5 +1,7 @@
+__pycache__/
 Emeric_Code/
 Test_Code/
 orekit-data.zip
 .env
-Propagation_Data.csv
+Propagation_Data.pkl
+Satellite_Data.pkl
