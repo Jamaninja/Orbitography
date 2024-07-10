@@ -5,3 +5,5 @@ orekit-data.zip
 .env
 Propagation_Data.pkl
 Satellite_Data.pkl
+tle.txt
+Download_Satellite_Data_TEST.py
