@@ -15,10 +15,12 @@ from datetime import datetime, timedelta
 from moviepy.editor import VideoClip
 import io 
 from PIL import Image
+import ffmpeg
+from subprocess import Popen, PIPE
 
 sf = SatelliteFunctions()
 
-with open("tle.txt") as file:
+with open("tle_short.txt") as file:
     tle = file.readlines()
 
 tle1, tle2 = tle[::2], tle[1::2]
@@ -82,31 +84,26 @@ pos_info["40697"].loc[:, "lon"] = np.degrees([gp.longitude for gp in groundpoint
 
 fig = go.Figure(data=go.Scattergeo(
     lat = [],
-    lon = [],
-    ))
+    lon = []
+    )).update_layout(geo = dict(
+                        projection_type = "mercator",
+                        ))
 
-fig.update_layout(
-    geo = dict(
-        projection_type = "equal earth",
-        ))
+fps = int(1440/res)
+p = Popen(['ffmpeg', '-y', '-f', 'image2pipe', '-vcodec', 'png', '-r', str(fps), '-i', '-', '-vcodec', 'mpeg4', '-qscale', '5', 
+           '-r', str(fps), 'video_short.avi', "-fflags", "+genpts"], stdin=PIPE)
 
-def plotly_fig2array(fig):
-    fig_bytes = fig.to_image(format="png")
-    buf = io.BytesIO(fig_bytes)
-    img = Image.open(buf).convert('RGB')
-    return np.asarray(img)
-
-def make_frame(t):
-    frame = int(20*t)
+for i in pos_info["40697"].index:
     fig.update_traces(
-        lat = [pos_info["40697"].loc[frame, "lat"]],
-        lon = [pos_info["40697"].loc[frame, "lon"]]
+        lat = [pos_info["40697"].loc[i, "lat"]],
+        lon = [pos_info["40697"].loc[i, "lon"]]
         )
     fig.update_layout(
-        title = str(pos_info["40697"].loc[frame, "time"])
+        title = str(pos_info["40697"].loc[i, "time"])
         )
-    return plotly_fig2array(fig)
+    
+    img = Image.open(io.BytesIO(fig.to_image(format="png"))).convert('RGB')
+    img.save(p.stdin, 'PNG')
 
-animation = VideoClip(make_frame, duration=pos_info["40697"].index[-1]/20)
-#fps = int(1440/res)
-animation.write_videofile("test.mp4", fps=20)
+p.stdin.close()
+p.wait()
