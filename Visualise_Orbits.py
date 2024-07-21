@@ -39,18 +39,18 @@ for i,_ in enumerate(tle1):
 
 sat_epoch = lambda ind: tle_info["40697"].loc[ind, "epoch"] if ind >=0 else tle_info["40697"].loc[tle_info["40697"].index[ind], "epoch"]
 
-res         = 1 # minutes per frame
+res         = 5 # minutes per frame
 time_start  = sat_epoch(0)
 time_end    = sat_epoch(-1)
-time_start  = datetime(time_start.year, time_start.month, time_start.day, 0, 0, 0, 0) 
-time_end    = datetime(time_end.year, time_end.month, time_end.day, 0, 0, 0, 0) + timedelta(days=1)
+time_start  = datetime(time_start.year, time_start.month, time_start.day, 0, 0, 0, 0)               # Sets start time to 00:00 UTC on the day of the first epoch
+time_end    = datetime(time_end.year, time_end.month, time_end.day, 0, 0, 0, 0) + timedelta(days=1) # Sets end time to 00:00 UTC of the day after the last epoch
 time_array  = [time_start + timedelta(minutes=m) for m in range(0, int((time_end-time_start).total_seconds()/60 + 1), res)]
 
 pvs = []
 pos_info["40697"].loc[:, "time"] = time_array 
 
 for i in tle_info["40697"].index:
-    if not i:
+    if not i: # Assigns the start and end points for each epoch to propagate between, usually the midpoint between epochs
         tle_info["40697"].loc[0, "start"] = time_start
         tle_info["40697"].loc[0, "end"]   = sat_epoch(0) + (sat_epoch(1) - sat_epoch(0)) / 2
         
@@ -64,46 +64,56 @@ for i in tle_info["40697"].index:
 
     for t in time_array:
         if tle_info["40697"].loc[i, "start"] <= t < tle_info["40697"].loc[i, "end"]:
-            tle_info["40697"].loc[i, "times"].append(t)
+            tle_info["40697"].loc[i, "times"].append(t)     # Creates an array of time steps that lie between the start and end points of each epoch
 
         elif t > tle_info["40697"].loc[i, "end"]:
-            break
+            break                                           # Breaks t loop once time step is beyond current range
 
         else:
-            tle_info["40697"].loc[i, "times"].append(t) # Added seperately to prevent a 1 in 3.6 billion odds crash
+            tle_info["40697"].loc[i, "times"].append(t)     # Added seperately to prevent a 1 in 3.6 billion odds crash
     
-    time_array = [x for x in time_array if x not in tle_info["40697"].loc[i, "times"]]
-
-    propagator = TLEPropagator.selectExtrapolator(tle_info["40697"].loc[i, "tle"])
-    for i in [propagator.propagate(datetime_to_absolutedate(t)).getPVCoordinates() for t in tle_info["40697"].loc[i, "times"]]:
-        pvs.append(i)
+    time_array = [x for x in time_array if x not in tle_info["40697"].loc[i, "times"]]                                              # Removes time steps that have already been assigned
+    propagator = TLEPropagator.selectExtrapolator(tle_info["40697"].loc[i, "tle"])                                                  # Creates a TLE propagation model for the epoch at index i
+    for pv in [propagator.propagate(datetime_to_absolutedate(t)).getPVCoordinates() for t in tle_info["40697"].loc[i, "times"]]:    # Calculates PV coordinates for all time steps that use this epoch
+        pvs.append(pv)                                                                                                              # And appends them to a list of all PV coordinates
 
 groundpoints                    = [sf.earth(sf.eme2000).transform(pv.position, sf.eme2000, pv.date) for pv in pvs]
 pos_info["40697"].loc[:, "lat"] = np.degrees([gp.latitude for gp in groundpoints])
 pos_info["40697"].loc[:, "lon"] = np.degrees([gp.longitude for gp in groundpoints])
 
-fig = go.Figure(data=go.Scattergeo(
-    lat = [],
-    lon = []
-    )).update_layout(geo = dict(
-                        projection_type = "mercator",
-                        ))
-
-fps = int(1440/res)
-p = Popen(['ffmpeg', '-y', '-f', 'image2pipe', '-vcodec', 'png', '-r', str(fps), '-i', '-', '-vcodec', 'mpeg4', '-qscale', '5', 
-           '-r', str(fps), 'video_short.avi', "-fflags", "+genpts"], stdin=PIPE)
+fps = int(288/res)
+p = Popen(["ffmpeg", "-y", "-f", "image2pipe", "-vcodec", "png", "-r", str(fps), "-i", "-", "-vcodec", "mpeg4", "-qscale", "5", "-r", str(fps), "video_short.avi"], stdin=PIPE) 
+    # Fancy FFmpeg code that I repurposed from Marwan Alsabbagh at
+    # https://stackoverflow.com/questions/13294919/can-you-stream-images-to-ffmpeg-to-construct-a-video-instead-of-saving-them-t
 
 for i in pos_info["40697"].index:
-    fig.update_traces(
-        lat = [pos_info["40697"].loc[i, "lat"]],
-        lon = [pos_info["40697"].loc[i, "lon"]]
-        )
-    fig.update_layout(
+    if i > 9:
+        h = i - 10
+    else:
+        h = 0
+
+    layout = go.Layout(
         title = str(pos_info["40697"].loc[i, "time"])
         )
     
-    img = Image.open(io.BytesIO(fig.to_image(format="png"))).convert('RGB')
+    traces = [
+        go.Scattergeo(
+            lat = [pos_info["40697"].loc[i, "lat"]],
+            lon = [pos_info["40697"].loc[i, "lon"]],
+            marker=dict(color="red",size=5)
+        ),
+        go.Scattergeo(
+            lat = pos_info["40697"].loc[h:i, "lat"],
+            lon = pos_info["40697"].loc[h:i, "lon"],
+            marker=dict(size=1),
+            line=dict(color="red",width=5)
+        )
+    ]
+
+    fig = go.Figure(data=traces, layout=layout)
+    
+    img = Image.open(io.BytesIO(fig.to_image(format="png")))
     img.save(p.stdin, 'PNG')
 
 p.stdin.close()
-p.wait()
+#p.wait()
