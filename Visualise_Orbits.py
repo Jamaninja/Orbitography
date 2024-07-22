@@ -81,34 +81,36 @@ groundpoints                    = [sf.earth(sf.eme2000).transform(pv.position, s
 pos_info["40697"].loc[:, "lat"] = np.degrees([gp.latitude for gp in groundpoints])
 pos_info["40697"].loc[:, "lon"] = np.degrees([gp.longitude for gp in groundpoints])
 
-fps = int(288/res)
+fps = int(144/res)
 p = Popen(["ffmpeg", "-y", "-f", "image2pipe", "-vcodec", "png", "-r", str(fps), "-i", "-", "-vcodec", "mpeg4", "-qscale", "5", "-r", str(fps), "video_short.avi"], stdin=PIPE) 
     # Fancy FFmpeg code that I repurposed from Marwan Alsabbagh at
     # https://stackoverflow.com/questions/13294919/can-you-stream-images-to-ffmpeg-to-construct-a-video-instead-of-saving-them-t
 
+threshold = int(30 / res)
+opacity = [np.exp(-x) for x in np.linspace(0, np.log(64), threshold)]
+
 for i in pos_info["40697"].index:
-    if i > 9:
-        h = i - 10
-    else:
-        h = 0
+    h = max(0, i - threshold)
 
     layout = go.Layout(
-        title = str(pos_info["40697"].loc[i, "time"])
+        title       = str(pos_info["40697"].loc[i, "time"]),
+        showlegend  = False
         )
     
-    traces = [
-        go.Scattergeo(
-            lat = [pos_info["40697"].loc[i, "lat"]],
-            lon = [pos_info["40697"].loc[i, "lon"]],
-            marker=dict(color="red",size=5)
-        ),
-        go.Scattergeo(
-            lat = pos_info["40697"].loc[h:i, "lat"],
-            lon = pos_info["40697"].loc[h:i, "lon"],
-            marker=dict(size=1),
-            line=dict(color="red",width=5)
-        )
-    ]
+    traces = [go.Scattergeo(
+         lat     = [pos_info["40697"].loc[i, "lat"]],
+         lon     = [pos_info["40697"].loc[i, "lon"]],
+         marker=dict(color="red",size=3)
+         )]
+    
+    for j in range(h,i):
+                traces.append(go.Scattergeo(
+            lat     = pos_info["40697"].loc[j:j+1, "lat"],
+            lon     = pos_info["40697"].loc[j:j+1, "lon"],
+            mode    = "lines",
+            line    = dict(color="red",width=1.5),
+            opacity = opacity[i-j-1]
+            ))    
 
     fig = go.Figure(data=traces, layout=layout)
     
