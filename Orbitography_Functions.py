@@ -3,7 +3,6 @@ vm = orekit.initVM()
 from orekit.pyhelpers import setup_orekit_curdir, datetime_to_absolutedate
 setup_orekit_curdir()
 
-
 from org.orekit.frames import FramesFactory # type: ignore
 from org.orekit.bodies import OneAxisEllipsoid # type: ignore
 from org.orekit.time import TimeScalesFactory, AbsoluteDate # type: ignore
@@ -27,12 +26,7 @@ import plotly.graph_objs as go
 from PIL import Image
 
 now = datetime.now(UTC)
-if now.minute != 59:
-    time_now = AbsoluteDate(now.year, now.month, now.day, now.hour, now.minute + 1, 0.0, TimeScalesFactory.getUTC())
-elif now.hour != 23:
-    time_now = AbsoluteDate(now.year, now.month, now.day, now.hour + 1, 0, 0.0, TimeScalesFactory.getUTC())
-else:
-    time_now = AbsoluteDate(now.year, now.month, now.day + 1, 0, 0, 0.0, TimeScalesFactory.getUTC())
+now = datetime_to_absolutedate(now - timedelta(minutes=-1, seconds=now.second, microseconds=now.microsecond))
 
 class PlotFunctions:
     def __init__(self, prop_data_file):
@@ -40,7 +34,7 @@ class PlotFunctions:
 
     def createSpheroid(self, texture, equatorial_radius, flattening=0):
         """
-        Fetches the current time, rounded down to the minute
+        Creates a spheroid
 
         Args:
             texture: 
@@ -49,10 +43,10 @@ class PlotFunctions:
                 The radius of the spheroid at the equator, in metres
             
             flattening: float, optional
-                The flattening value of the spheroid. Leave empty to define a perfect sphere
+                The flattening value of the spheroid. Leave blank to define a perfect sphere
 
         Returns:
-            Array of radii in the x, y, and z directions, where z is up. Units are in metres
+            Array of radii in the x, y, and z directions, where z is up. Units in metres
         """
 
         N_lat = int(texture.shape[0])
@@ -119,18 +113,21 @@ class PlotFunctions:
             TimeDelta of time since epoch
         """
 
-        epoch = self.prop_data.get(sat)['epoch']
-        return timedelta(seconds = time_now.durationFrom(datetime_to_absolutedate(epoch)))
+        return timedelta(seconds = now.durationFrom(datetime_to_absolutedate(self.prop_data.get(sat)['epoch'])))
 
     def plotOrbits(self):
-
+        """
+        Creates a 3D orbital plot
+        """
+        
         trace_orbit = []
 
         for sat in self.prop_data:
 
         # Defines label text when hovering over orbits and creates orbit traces
             # Satellite name
-            # Latitude & longitude
+            # Latitude & longitude (° ' ")
+            # Orbital radius & height (km)
             # Date & time (UTC)
             # Time since epoch
 
@@ -148,7 +145,7 @@ class PlotFunctions:
                                 r/1000, (r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000,'-'*56,
                                 dt.strftime('%Y-%m-%d %H:%M:%S'), 'UTC', self.getEpochDelta(sat)
                                 )
-                    )
+                            )
 
             trace_orbit.append(go.Scatter3d(x=[x for x in self.prop_data[sat]['x']],
                                             y=[y for y in self.prop_data[sat]['y']],
@@ -159,25 +156,7 @@ class PlotFunctions:
                                             hovertemplate='%{text}<extra></extra>',
                                             text = text
                                             )
-                       )
-
-        '''
-        proximity_bound = 10e3 # meters
-        # Detecting collisions
-            # First, determine which satellites are within a 10km box
-        while True:
-            a,b = 0,1
-            sat_a, sat_b = sat_data[a], sat_data[b]
-            if abs(prop_data[sat_a]['x'] - prop_data[sat_b]['x']) > proximity_bound:
-                break
-            elif abs(prop_data[sat_a]['y'] - prop_data[sat_b]['y']) > proximity_bound:
-                break
-            elif abs(prop_data[sat_a]['z'] - prop_data[sat_b]['z']) > proximity_bound:
-                break
-            else:
-                # Calculate distance between sat_a and sat_b
-                print()
-        '''
+                               )
 
         trace_earth = self.plotEarth()
         trace_background = self.plotBackground()
@@ -192,14 +171,14 @@ class PlotFunctions:
                            )
 
         fig = go.Figure(data=[trace_earth, trace_background] + trace_orbit, 
-                        layout=layout,
+                        layout=layout
                         )
         fig.show()
 
 class SatelliteFunctions:
 
-    def __init__(self, sat_data):
-        self.sat_data   = sat_data
+    def __init__(self, **kwargs):
+        self.sat_data   = kwargs.get("sat_data")
         self.eme2000    = FramesFactory.getEME2000()
         self.itrf       = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
 
@@ -222,20 +201,20 @@ class SatelliteFunctions:
         Returns:
             Cartesian orbit of desired satellite at epoch
         """
-        propagator = TLEPropagator.selectExtrapolator(sat_tle)
-        epoch = sat_tle.getDate()
-        pv = propagator.getPVCoordinates(epoch, self.eme2000)
-        initial_orbit = CartesianOrbit(pv, self.eme2000, epoch, Constants.WGS84_EARTH_MU)
+        propagator      = TLEPropagator.selectExtrapolator(sat_tle)
+        epoch           = sat_tle.getDate()
+        pv              = propagator.getPVCoordinates(epoch, self.eme2000)
+        initial_orbit   = CartesianOrbit(pv, self.eme2000, epoch, Constants.WGS84_EARTH_MU)
 
         return initial_orbit
 
-    def propagateTLE(self, sat, prop_dur, prop_res):
+    def propagateTLE(self, sat, resolution, **kwargs):
         """
-        Propagates the satellite's orbit using SGP4/SDP4
+        Propagates the satellite's orbit using SGP4/SDP4 propagation
 
         Args:
             sat: string
-                The ID of the desired satellite
+                The NORAD ID of the desired satellite
             
             prop_dur: float
                 For how many days forward should the orbit be propagated
@@ -246,19 +225,26 @@ class SatelliteFunctions:
         Returns:
             Array of position and velocity coordinates
         """
-            
-        extrap_date = time_now
-        propagator = TLEPropagator.selectExtrapolator(self.toTLE(self.sat_data[sat]['TLE']))
-        pvs = []
-        final_date = extrap_date.shiftedBy(60 * 60 * 24 * prop_dur) #seconds
 
-        while (extrap_date.compareTo(final_date) <= 0.0):
-            pvs.append(propagator.getPVCoordinates(extrap_date, self.eme2000))
-            extrap_date = extrap_date.shiftedBy(prop_res)
+        start_date  = kwargs.get("start")
+        end_date    = kwargs.get("end")
+        duration    = kwargs.get("duration")
         
+        if not(bool(duration) ^ bool(start_date and end_date)):
+            raise Exception("Provide either only a duration or both a start and end date")
+        elif not start_date:
+            start_date  = now
+            duration    = duration * 86400.
+        elif not duration:
+            duration    = end_date.shiftedBy(resolution>>1).durationFrom(start_date)
+
+        propagator  = TLEPropagator.selectExtrapolator(self.toTLE(self.sat_data[sat]['TLE']))
+        t           = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
+        pvs         = [propagator.propagate(tt).getPVCoordinates() for tt in t]
+
         return pvs
 
-    def propagateNumerical(self, sat, prop_dur, prop_res):
+    def propagateNumerical(self, sat, resolution, **kwargs):
         """
         Propagates the satellite's orbit using numerical propagation
 
@@ -276,32 +262,44 @@ class SatelliteFunctions:
             Array of position and velocity coordinates
         """
 
-        initial_orbit = self.initialOrbitTLE(self.toTLE(self.sat_data[sat]['TLE'])) # Defines Cartesian orbit using latest TLE data
-        sat_mass = self.sat_data[sat]['mass']
-        initial_state = SpacecraftState(initial_orbit, sat_mass)
+        start_date  = kwargs.get("start")
+        end_date    = kwargs.get("end")
+        duration    = kwargs.get("duration")
 
-        min_step = 0.001
-        max_step = 1000.0
-        init_step = 60.0
-        position_tolerance = 1.0
+        if not(bool(duration) ^ bool(start_date and end_date)):
+            raise Exception("Provide either only a duration or both a start and end date")
+        elif not start_date:
+            start_date  = now
+            duration    = duration * 86400.
+        elif not duration:
+            duration    = end_date.shiftedBy(resolution>>1).durationFrom(start_date)
+
+        initial_orbit   = self.initialOrbitTLE(self.toTLE(self.sat_data[sat]['TLE'])) # Defines initial Cartesian orbit using latest TLE data
+        sat_mass        = self.sat_data[sat]['mass']
+        initial_state   = SpacecraftState(initial_orbit, sat_mass)
+
+        min_step        = 0.001
+        max_step        = 1000.0
+        init_step       = 60.0
+        pos_tolerance   = 1.0
         orbit_type = OrbitType.CARTESIAN
-        tol = NumericalPropagator.tolerances(position_tolerance, initial_orbit, orbit_type)
+        tol = NumericalPropagator.tolerances(pos_tolerance, initial_orbit, orbit_type)
 
         integrator = DormandPrince853Integrator(min_step, max_step, 
                                                 JArray_double.cast_(tol[0]),  # Double array of doubles needs to be casted in Python
                                                 JArray_double.cast_(tol[1]))
         integrator.setInitialStepSize(init_step)
 
-        propagator_num = NumericalPropagator(integrator)
-        propagator_num.setOrbitType(orbit_type)
-        propagator_num.setInitialState(initial_state)
+        propagator = NumericalPropagator(integrator)
+        propagator.setOrbitType(orbit_type)
+        propagator.setInitialState(initial_state)
 
         gravityProvider = GravityFieldFactory.getNormalizedProvider(8, 8)
-        propagator_num.addForceModel(HolmesFeatherstoneAttractionModel(self.earth(self.itrf).getBodyFrame(), gravityProvider))
+        propagator.addForceModel(HolmesFeatherstoneAttractionModel(self.itrf, gravityProvider))
 
-        start_date = time_now
+        start_date = now
 
-        t = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, prop_dur * 86400, prop_res)]
-        pvs = [propagator_num.propagate(tt).getPVCoordinates() for tt in t]
+        t   = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
+        pvs = [propagator.propagate(tt).getPVCoordinates() for tt in t]
 
         return pvs
