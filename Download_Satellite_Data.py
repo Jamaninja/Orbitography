@@ -54,13 +54,13 @@ sat_data = {
     }
 }
 
-id_st = os.getenv('id_st')
-pass_st = os.getenv('pass_st')
+id_st = os.getenv("id_st")
+pass_st = os.getenv("pass_st")
 st = SpaceTrackClient(identity=id_st, password=pass_st)
 
 for sat in sat_data:
-    tle = st.tle(norad_cat_id=sat_data[sat]['norad_id'], epoch='<{}'.format(now), orderby='epoch desc', limit=1, format='tle').split('\n')
-    sat_data[sat]['TLE'] = (tle[0],tle[1])
+    tle = st.tle(norad_cat_id=sat_data[sat]["norad_id"], epoch='<{}'.format(now), orderby="epoch desc", limit=1, format="tle").split("\n")
+    sat_data[sat]["TLE"] = (tle[0],tle[1])
 
 sat_dataframe = pd.DataFrame(sat_data)
-sat_dataframe.to_pickle('Satellite_Data.pkl')
+sat_dataframe.to_pickle("Satellite_Data.pkl")

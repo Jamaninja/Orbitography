@@ -236,7 +236,7 @@ class SatelliteFunctions:
             start_date  = now
             duration    = duration * 86400.
         elif not duration:
-            duration    = end_date.shiftedBy(resolution>>1).durationFrom(start_date)
+            duration    = end_date.shiftedBy(.1).durationFrom(start_date)
 
         propagator  = TLEPropagator.selectExtrapolator(self.toTLE(self.sat_data[sat]['TLE']))
         t           = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
@@ -272,7 +272,7 @@ class SatelliteFunctions:
             start_date  = now
             duration    = duration * 86400.
         elif not duration:
-            duration    = end_date.shiftedBy(resolution>>1).durationFrom(start_date)
+            duration    = end_date.shiftedBy(.1).durationFrom(start_date)
 
         initial_orbit   = self.initialOrbitTLE(self.toTLE(self.sat_data[sat]['TLE'])) # Defines initial Cartesian orbit using latest TLE data
         sat_mass        = self.sat_data[sat]['mass']
@@ -296,8 +296,6 @@ class SatelliteFunctions:
 
         gravityProvider = GravityFieldFactory.getNormalizedProvider(8, 8)
         propagator.addForceModel(HolmesFeatherstoneAttractionModel(self.itrf, gravityProvider))
-
-        start_date = now
 
         t   = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
         pvs = [propagator.propagate(tt).getPVCoordinates() for tt in t]
