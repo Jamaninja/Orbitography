@@ -26,7 +26,7 @@ import plotly.graph_objs as go
 from PIL import Image
 
 now = datetime.now(UTC)
-now = datetime_to_absolutedate(now - timedelta(minutes=-1, seconds=now.second, microseconds=now.microsecond))
+now = datetime_to_absolutedate(now - timedelta(seconds=now.second, microseconds=now.microsecond))
 
 class PlotFunctions:
     def __init__(self, prop_data_file):
@@ -216,14 +216,24 @@ class SatelliteFunctions:
             sat: string
                 The NORAD ID of the desired satellite
             
-            prop_dur: float
-                For how many days forward should the orbit be propagated
+            resolution: float
+                How many seconds between PV coordinate updates
             
-            prop_res: float
-                How many seconds between PV updates
+            **kwargs:
+                Provide either duration or start AND end
+
+                    duration: int or float
+                        Number of days from now to propagate the orbit
+
+                    start: AbsoluteDate
+                        The start date to propagate the orbit from
+                    
+                    end: AbsoluteDate
+                        The target date to propagate the orbit until
 
         Returns:
-            Array of position and velocity coordinates
+            pvs: list[TimeStampedPVCoordinates]
+                Array of time-stamped position and velocity coordinates
         """
 
         start_date  = kwargs.get("start")
@@ -250,16 +260,94 @@ class SatelliteFunctions:
 
         Args:
             sat: string
-                The ID of the desired satellite
+                The NORAD ID of the desired satellite
             
-            prop_dur: float
-                For how many days forward should the orbit be propagated
+            resolution: int or float
+                How many seconds between PV coordinate updates
             
-            prop_res: float
-                How many seconds between PV updates
+            **kwargs:
+                Provide either duration or start AND end
+
+                    duration: float
+                        Number of days from now to propagate the orbit
+
+                    start: AbsoluteDate
+                        The start date to propagate the orbit from
+                    
+                    end: AbsoluteDate
+                        The target date to propagate the orbit until
 
         Returns:
-            Array of position and velocity coordinates
+            pvs: list[TimeStampedPVCoordinates]
+                Array of time-stamped position and velocity coordinates
+        """
+
+        start_date  = kwargs.get("start")
+        end_date    = kwargs.get("end")
+        duration    = kwargs.get("duration")
+
+        if not(bool(duration) ^ bool(start_date and end_date)):
+            raise Exception("Provide either only a duration or both a start and end date")
+        elif not start_date:
+            start_date  = now
+            duration    = duration * 86400.
+        elif not duration:
+            duration    = end_date.shiftedBy(.1).durationFrom(start_date)
+
+        initial_orbit   = self.initialOrbitTLE(self.toTLE(self.sat_data[sat]['TLE'])) # Defines initial Cartesian orbit using latest TLE data
+        sat_mass        = self.sat_data[sat]['mass']
+        initial_state   = SpacecraftState(initial_orbit, sat_mass)
+
+        min_step        = 0.001
+        max_step        = 1000.0
+        init_step       = 60.0
+        pos_tolerance   = 1.0
+        orbit_type = OrbitType.CARTESIAN
+        tol = NumericalPropagator.tolerances(pos_tolerance, initial_orbit, orbit_type)
+
+        integrator = DormandPrince853Integrator(min_step, max_step, 
+                                                JArray_double.cast_(tol[0]),  # Double array of doubles needs to be casted in Python
+                                                JArray_double.cast_(tol[1]))
+        integrator.setInitialStepSize(init_step)
+
+        propagator = NumericalPropagator(integrator)
+        propagator.setOrbitType(orbit_type)
+        propagator.setInitialState(initial_state)
+
+        gravityProvider = GravityFieldFactory.getNormalizedProvider(8, 8)
+        propagator.addForceModel(HolmesFeatherstoneAttractionModel(self.itrf, gravityProvider))
+
+        t   = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
+        pvs = [propagator.propagate(tt).getPVCoordinates() for tt in t]
+
+        return pvs
+    
+    def propagateNumerical2(self, sat, resolution, **kwargs):
+        """
+        Propagates the satellite's orbit using numerical propagation
+
+        Args:
+            sat: string
+                The NORAD ID of the desired satellite
+            
+            resolution: float
+                How many seconds between PV coordinate updates
+            
+            **kwargs:
+                Provide either duration or start AND end
+
+                    duration: int or float
+                        Number of days from now to propagate the orbit
+
+                    start: AbsoluteDate
+                        The start date to propagate the orbit from
+                    
+                    end: AbsoluteDate
+                        The target date to propagate the orbit until
+
+        Returns:
+            pvs: list[TimeStampedPVCoordinates]
+                Array of time-stamped position and velocity coordinates
         """
 
         start_date  = kwargs.get("start")
