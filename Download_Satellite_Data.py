@@ -1,17 +1,10 @@
-import orekit
-vm = orekit.initVM()
-from orekit.pyhelpers import setup_orekit_curdir
-setup_orekit_curdir()
-
-from org.orekit.propagation.analytical.tle import TLE # type: ignore
-
 import pandas as pd
 from spacetrack import SpaceTrackClient
 from dotenv import load_dotenv
 import os
 load_dotenv()
 
-from Orbitography_Functions import time_now
+from Orbitography_Functions import now
 
 sat_data = {
     'ENVISAT': {
@@ -61,13 +54,13 @@ sat_data = {
     }
 }
 
-id_st = os.getenv('id_st')
-pass_st = os.getenv('pass_st')
+id_st = os.getenv("id_st")
+pass_st = os.getenv("pass_st")
 st = SpaceTrackClient(identity=id_st, password=pass_st)
 
 for sat in sat_data:
-    tle = st.tle(norad_cat_id=sat_data[sat]['norad_id'], epoch='<{}'.format(time_now), orderby='epoch desc', limit=1, format='tle').split('\n')
-    sat_data[sat]['TLE'] = (tle[0],tle[1])
+    tle = st.tle(norad_cat_id=sat_data[sat]["norad_id"], epoch='<{}'.format(now), orderby="epoch desc", limit=1, format="tle").split("\n")
+    sat_data[sat]["TLE"] = (tle[0],tle[1])
 
 sat_dataframe = pd.DataFrame(sat_data)
-sat_dataframe.to_pickle('Satellite_Data.pkl')
+sat_dataframe.to_pickle("Satellite_Data.pkl")
