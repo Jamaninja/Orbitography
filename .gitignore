@@ -1,6 +1,7 @@
 __pycache__/
 Emeric_Code/
 Test_Code/
+slr_dataset/
 orekit-data.zip
 .env
 Propagation_Data.pkl
@@ -9,3 +10,5 @@ tle.txt
 Download_Satellite_Data_TEST.py
 gpt3_1.grd
 gpt3_5.grd
+ecc_xyz.snx
+SLRF2020_POS+VEL_2023.10.02.snx
