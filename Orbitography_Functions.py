@@ -137,15 +137,16 @@ class PlotFunctions:
             lon_lambda = lambda x: 'E' if x >= 0 else 'W'
 
             for lat, lon, r, dt in zip(self.prop_data[sat]['latitude'], self.prop_data[sat]['longitude'], self.prop_data[sat]['radius'], self.prop_data[sat]['datetime']):    
-                text.append('''{}<br>{}
-<br>{:02}° {:02}\' {:02.4f}\" {}, {:02}° {:02}\' {:02.4f}\" {}
-<br>Radius (Alt): {:.2f} km ({:.2f} km)<br>{}
-<br>{} {}<br>epoch+{}'''.format(name, '-'*56,
-                                int(abs(lat)), int(abs(lat)%1*60), abs(lat)%1*3600%60, lat_lambda(lat), int(abs(lon)), int(abs(lon)%1*60), abs(lon)%1*3600%60, lon_lambda(lon), 
-                                r/1000, (r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000,'-'*56,
-                                dt.strftime('%Y-%m-%d %H:%M:%S'), 'UTC', self.getEpochDelta(sat)
-                                )
-                            )
+                text.append((
+                    f"{name}<br>"
+                    f"{'-'*56}<br>"
+                    f"{int(abs(lat)):02}° {int(abs(lat)%1*60):02}\' {abs(lat)%1*3600%60:02.4f}\" {lat_lambda(lat)}, "
+                    f"{int(abs(lon)):02}° {int(abs(lon)%1*60):02}\' {abs(lon)%1*3600%60:02.4f}\" {lon_lambda(lon)}<br>"
+                    f"Radius (Alt): {r/1000:.2f} km ({(r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000:.2f} km)<br>"
+                    f"{'-'*56}<br>"
+                    f"{dt.strftime("%Y-%m-%d %H:%M:%S")} UTC<br>"
+                    f"epoch+{self.getEpochDelta(sat)}"
+                    ))
 
             trace_orbit.append(go.Scatter3d(x=[x for x in self.prop_data[sat]['x']],
                                             y=[y for y in self.prop_data[sat]['y']],
