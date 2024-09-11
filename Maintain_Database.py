@@ -139,7 +139,7 @@ def createDatabase(path):
                "NORAD_CAT_ID":      "", # COSPAR (INTLDES) ID also required, need to find how to get data from Space-Track
                "OBJECT_NAME":       "",
                "OBJECT_ID":         "",
-               "OBJECT_TYPE":       "",    
+               "OBJECT_TYPE":       "", # PAYLOAD, ROCKET BODY, DEBRIS, or UNKNOWN
                "RCS_SIZE":          "",
                "RCS_SIZE_EST":      [], #
                "MASS_EST":          [], #
@@ -185,7 +185,7 @@ def createDatabase(path):
     print("Creating database: 100.00%")
     print("Saving database.")
     df.to_pickle(f"{path["directory"]}/{path["database"]}")
-    df.to_csv(f"{path["directory"]}/{path["database"][:-3]}csv")
+    df.to_csv(f"{path["directory"]}/{path["database"].split('.')[0]}.csv")
     return path
 
 def updateDatabase(path):

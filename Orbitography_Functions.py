@@ -21,6 +21,7 @@ from java.io import File # type: ignore
 
 import pandas as pd
 import numpy as np
+import json
 from datetime import datetime, timedelta, UTC
 import plotly.graph_objs as go
 from PIL import Image
@@ -115,15 +116,20 @@ class PlotFunctions:
 
         return timedelta(seconds = now.durationFrom(datetime_to_absolutedate(self.prop_data.get(sat)['epoch'])))
 
-    def plotOrbits(self):
+    def plotOrbits(self, prop_data_config_file):
         '''
         Creates a 3D orbital plot
         '''
-        
+
+        with open(prop_data_config_file, 'r') as file:
+            prop_data_config = json.load(file)
+
         trace_orbit = []
         n = 0
-        length = len(self.prop_data)
-        for sat in self.prop_data.index:
+        prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in prop_data_config['objects'].items() if value])]
+        length = len(prop_data)
+
+        for sat in prop_data.index:
 
         # Defines label text when hovering over orbits and creates orbit traces
             # Satellite NORAD CAT ID
@@ -137,31 +143,30 @@ class PlotFunctions:
             lat_lambda = lambda x: 'N' if x >= 0 else 'S'
             lon_lambda = lambda x: 'E' if x >= 0 else 'W'
 
-            for lat, lon, r, dt in self.prop_data.loc[sat, ['latitude', 'longitude', 'radius', 'datetime']]:    
+            for lat, lon, r, dt in pd.concat([prop_data.loc[sat, ['latitude', 'longitude', 'radius']], pd.Series([prop_data_config['datetimes']], ['datetimes'])]):    
                 text.append((
                     f'NORAD CAT ID: {NORAD_CAT_ID}<br>'
                     f'{'-'*56}<br>'
-                    f'{int(abs(lat)):02}° {int(abs(lat)%1*60):02}\' {abs(lat)%1*3600%60:02.4f}\' {lat_lambda(lat)}, '
-                    f'{int(abs(lon)):02}° {int(abs(lon)%1*60):02}\' {abs(lon)%1*3600%60:02.4f}\' {lon_lambda(lon)}<br>'
+                    f'{int(abs(lat)):02}° {int(abs(lat)%1*60):02}\' {abs(lat)%1*3600%60:07.4f}\" {lat_lambda(lat)}, '
+                    f'{int(abs(lon)):02}° {int(abs(lon)%1*60):02}\' {abs(lon)%1*3600%60:07.4f}\" {lon_lambda(lon)}<br>'
                     f'Radius (Alt): {r/1000:.2f} km ({(r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000:.2f} km)<br>'
                     f'{'-'*56}<br>'
-                    f'{dt.strftime('%Y-%m-%d %H:%M:%S')} UTC<br>'
+                    f'{dt} UTC<br>'
                     f'epoch+{self.getEpochDelta(sat)}'
                     ))
 
-            trace_orbit.append(go.Scatter3d(x               = self.prop_data.loc[sat, 'x'],
-                                            y               = self.prop_data.loc[sat, 'y'],
-                                            z               = self.prop_data.loc[sat, 'z'],
+            trace_orbit.append(go.Scatter3d(x               = prop_data.loc[sat, 'x'],
+                                            y               = prop_data.loc[sat, 'y'],
+                                            z               = prop_data.loc[sat, 'z'],
                                             marker          = dict(size=0.5),
                                             line            = dict(color='white',width=1),
                                             hoverinfo       = 'text',
                                             hovertemplate   = '%{text}<extra></extra>',
                                             text            = text
-                                            )
-                               )
+                                            ))
             n += 1
             if not n % 50:
-                print(f'Tracing orbits:  {100*n/length:00.2f}%')
+                print(f'Tracing orbits:  {n/length:06.2%}')
         print('Tracing orbits: 100.00%')
 
         trace_earth = self.plotEarth()
