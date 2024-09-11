@@ -21,6 +21,7 @@ from java.io import File # type: ignore
 
 import pandas as pd
 import numpy as np
+import json
 from datetime import datetime, timedelta, UTC
 import plotly.graph_objs as go
 from PIL import Image
@@ -33,7 +34,7 @@ class PlotFunctions:
         self.prop_data = pd.read_pickle(prop_data_file)
 
     def createSpheroid(self, texture, equatorial_radius, flattening=0):
-        """
+        '''
         Creates a spheroid
 
         Args:
@@ -47,7 +48,7 @@ class PlotFunctions:
 
         Returns:
             Array of radii in the x, y, and z directions, where z is up. Units in metres
-        """
+        '''
 
         N_lat = int(texture.shape[0])
         N_lon = int(texture.shape[1])
@@ -61,9 +62,9 @@ class PlotFunctions:
         return axes_radii
 
     def plotEarth(self):
-        """
+        '''
         Creates a spherical image of the Earth
-        """
+        '''
 
         # Data required for rendering the Earth's texture, and rotates the planet to align prime meridian
         earth_texture = np.asarray(Image.open('earth.jpeg')).T
@@ -89,9 +90,9 @@ class PlotFunctions:
         return surf
 
     def plotBackground(self):
-        """
+        '''
         Creates a black spherical background
-        """
+        '''
 
         bg_texture = np.asarray(Image.open('earth.jpeg')).T
         axes = self.createSpheroid(bg_texture, 100*Constants.IERS2010_EARTH_EQUATORIAL_RADIUS)
@@ -104,60 +105,69 @@ class PlotFunctions:
         return surf
     
     def getEpochDelta(self, sat):
-        """
+        '''
         Calculates time between the epoch of the current satellite and time_now
 
         Args:
             sat: the ID of the desired satellite
         Returns:
             TimeDelta of time since epoch
-        """
+        '''
 
         return timedelta(seconds = now.durationFrom(datetime_to_absolutedate(self.prop_data.get(sat)['epoch'])))
 
-    def plotOrbits(self):
-        """
+    def plotOrbits(self, prop_data_config_file):
+        '''
         Creates a 3D orbital plot
-        """
-        
-        trace_orbit = []
+        '''
 
-        for sat in self.prop_data:
+        with open(prop_data_config_file, 'r') as file:
+            prop_data_config = json.load(file)
+
+        trace_orbit = []
+        n = 0
+        prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in prop_data_config['objects'].items() if value])]
+        length = len(prop_data)
+
+        for sat in prop_data.index:
 
         # Defines label text when hovering over orbits and creates orbit traces
-            # Satellite name
-            # Latitude & longitude (° ' ")
+            # Satellite NORAD CAT ID
+            # Latitude & longitude (° ' ')
             # Orbital radius & height (km)
             # Date & time (UTC)
             # Time since epoch
 
             text = []
-            name = sat
+            NORAD_CAT_ID = sat
             lat_lambda = lambda x: 'N' if x >= 0 else 'S'
             lon_lambda = lambda x: 'E' if x >= 0 else 'W'
 
-            for lat, lon, r, dt in zip(self.prop_data[sat]['latitude'], self.prop_data[sat]['longitude'], self.prop_data[sat]['radius'], self.prop_data[sat]['datetime']):    
+            for lat, lon, r, dt in pd.concat([prop_data.loc[sat, ['latitude', 'longitude', 'radius']], pd.Series([prop_data_config['datetimes']], ['datetimes'])]):    
                 text.append((
-                    f"{name}<br>"
-                    f"{'-'*56}<br>"
-                    f"{int(abs(lat)):02}° {int(abs(lat)%1*60):02}\' {abs(lat)%1*3600%60:02.4f}\" {lat_lambda(lat)}, "
-                    f"{int(abs(lon)):02}° {int(abs(lon)%1*60):02}\' {abs(lon)%1*3600%60:02.4f}\" {lon_lambda(lon)}<br>"
-                    f"Radius (Alt): {r/1000:.2f} km ({(r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000:.2f} km)<br>"
-                    f"{'-'*56}<br>"
-                    f"{dt.strftime("%Y-%m-%d %H:%M:%S")} UTC<br>"
-                    f"epoch+{self.getEpochDelta(sat)}"
+                    f'NORAD CAT ID: {NORAD_CAT_ID}<br>'
+                    f'{'-'*56}<br>'
+                    f'{int(abs(lat)):02}° {int(abs(lat)%1*60):02}\' {abs(lat)%1*3600%60:07.4f}\" {lat_lambda(lat)}, '
+                    f'{int(abs(lon)):02}° {int(abs(lon)%1*60):02}\' {abs(lon)%1*3600%60:07.4f}\" {lon_lambda(lon)}<br>'
+                    f'Radius (Alt): {r/1000:.2f} km ({(r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000:.2f} km)<br>'
+                    f'{'-'*56}<br>'
+                    f'{dt} UTC<br>'
+                    f'epoch+{self.getEpochDelta(sat)}'
                     ))
 
-            trace_orbit.append(go.Scatter3d(x=[x for x in self.prop_data[sat]['x']],
-                                            y=[y for y in self.prop_data[sat]['y']],
-                                            z=[z for z in self.prop_data[sat]['z']],
-                                            marker=dict(size=0.5),
-                                            line=dict(color='white',width=1),
-                                            hoverinfo='text',
-                                            hovertemplate='%{text}<extra></extra>',
-                                            text = text
-                                            )
-                               )
+            trace_orbit.append(go.Scatter3d(x               = prop_data.loc[sat, 'x'],
+                                            y               = prop_data.loc[sat, 'y'],
+                                            z               = prop_data.loc[sat, 'z'],
+                                            marker          = dict(size=0.5),
+                                            line            = dict(color='white',width=1),
+                                            hoverinfo       = 'text',
+                                            hovertemplate   = '%{text}<extra></extra>',
+                                            text            = text
+                                            ))
+            n += 1
+            if not n % 50:
+                print(f'Tracing orbits:  {n/length:06.2%}')
+        print('Tracing orbits: 100.00%')
 
         trace_earth = self.plotEarth()
         trace_background = self.plotBackground()
@@ -179,7 +189,7 @@ class PlotFunctions:
 class SatelliteFunctions:
 
     def __init__(self, **kwargs):
-        self.sat_data   = kwargs.get("sat_data")
+        self.sat_data   = kwargs.get('sat_data')
         self.eme2000    = FramesFactory.getEME2000()
         self.itrf       = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
 
@@ -192,7 +202,7 @@ class SatelliteFunctions:
         return TLE(sat_tle_tuple[0], sat_tle_tuple[1])
 
     def initialOrbitTLE(self, sat_tle):
-        """
+        '''
         Initialises a Cartesian orbit of an object, using TLE data
 
         Args:
@@ -201,7 +211,7 @@ class SatelliteFunctions:
         
         Returns:
             Cartesian orbit of desired satellite at epoch
-        """
+        '''
         propagator      = TLEPropagator.selectExtrapolator(sat_tle)
         epoch           = sat_tle.getDate()
         pv              = propagator.getPVCoordinates(epoch, self.eme2000)
@@ -210,7 +220,7 @@ class SatelliteFunctions:
         return initial_orbit
 
     def propagateTLE(self, sat, resolution, **kwargs):
-        """
+        '''
         Propagates the satellite's orbit using SGP4/SDP4 propagation
 
         Args:
@@ -235,28 +245,28 @@ class SatelliteFunctions:
         Returns:
             pvs: list[TimeStampedPVCoordinates]
                 Array of time-stamped position and velocity coordinates
-        """
+        '''
 
-        start_date  = kwargs.get("start")
-        end_date    = kwargs.get("end")
-        duration    = kwargs.get("duration")
+        start_date  = kwargs.get('start')
+        end_date    = kwargs.get('end')
+        duration    = kwargs.get('duration')
         
         if not(bool(duration) ^ bool(start_date and end_date)):
-            raise Exception("Provide either only a duration or both a start and end date")
+            raise Exception('Provide either only a duration or both a start and end date')
         elif not start_date:
             start_date  = now
             duration    = duration * 86400.
         elif not duration:
             duration    = end_date.shiftedBy(.1).durationFrom(start_date)
 
-        propagator  = TLEPropagator.selectExtrapolator(self.toTLE(self.sat_data[sat]['TLE']))
+        propagator  = TLEPropagator.selectExtrapolator(self.toTLE(self.sat_data.loc[sat, 'TLE']))
         t           = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
         pvs         = [propagator.propagate(tt).getPVCoordinates() for tt in t]
 
         return pvs
 
     def propagateNumerical(self, sat, resolution, **kwargs):
-        """
+        '''
         Propagates the satellite's orbit using numerical propagation
 
         Args:
@@ -281,14 +291,14 @@ class SatelliteFunctions:
         Returns:
             pvs: list[TimeStampedPVCoordinates]
                 Array of time-stamped position and velocity coordinates
-        """
+        '''
 
-        start_date  = kwargs.get("start")
-        end_date    = kwargs.get("end")
-        duration    = kwargs.get("duration")
+        start_date  = kwargs.get('start')
+        end_date    = kwargs.get('end')
+        duration    = kwargs.get('duration')
 
         if not(bool(duration) ^ bool(start_date and end_date)):
-            raise Exception("Provide either only a duration or both a start and end date")
+            raise Exception('Provide either only a duration or both a start and end date')
         elif not start_date:
             start_date  = now
             duration    = duration * 86400.
@@ -324,7 +334,7 @@ class SatelliteFunctions:
         return pvs
     
     def propagateNumerical2(self, sat, resolution, **kwargs):
-        """
+        '''
         Propagates the satellite's orbit using numerical propagation
 
         Args:
@@ -349,14 +359,14 @@ class SatelliteFunctions:
         Returns:
             pvs: list[TimeStampedPVCoordinates]
                 Array of time-stamped position and velocity coordinates
-        """
+        '''
 
-        start_date  = kwargs.get("start")
-        end_date    = kwargs.get("end")
-        duration    = kwargs.get("duration")
+        start_date  = kwargs.get('start')
+        end_date    = kwargs.get('end')
+        duration    = kwargs.get('duration')
 
         if not(bool(duration) ^ bool(start_date and end_date)):
-            raise Exception("Provide either only a duration or both a start and end date")
+            raise Exception('Provide either only a duration or both a start and end date')
         elif not start_date:
             start_date  = now
             duration    = duration * 86400.
