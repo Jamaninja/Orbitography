@@ -114,50 +114,45 @@ class PlotFunctions:
             TimeDelta of time since epoch
         '''
 
-        return timedelta(seconds = now.durationFrom(datetime_to_absolutedate(self.prop_data.get(sat)['epoch'])))
+        return timedelta(seconds = now.durationFrom(datetime_to_absolutedate(self.prop_data.loc[sat, 'epoch'])))
 
-    def plotOrbits(self, prop_data_config_file):
+    def plotOrbits(self, prop_metadata_file):
         '''
         Creates a 3D orbital plot
         '''
-
-        with open(prop_data_config_file, 'r') as file:
-            prop_data_config = json.load(file)
+        limit = 100
+        with open(prop_metadata_file, 'r') as file:
+            prop_metadata = json.load(file)
 
         trace_orbit = []
+        rendered_prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in prop_metadata['objects'].items() if value])]
+        if limit:
+            rendered_prop_data = rendered_prop_data.iloc[:limit]
+        length      = len(rendered_prop_data)
+        dts         = prop_metadata['datetimes']
+        epochs      = [self.getEpochDelta(sat) for sat in rendered_prop_data.index]
+
+        lat_lambda  = lambda x: 'N' if x >= 0 else 'S'
+        lon_lambda  = lambda x: 'E' if x >= 0 else 'W'
+
         n = 0
-        prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in prop_data_config['objects'].items() if value])]
-        length = len(prop_data)
+        for sat in rendered_prop_data.index:
+            lats, lons, rs = rendered_prop_data.loc[sat, ['latitude', 'longitude', 'radius']]
+            text = [(                                                                                                       # Defines label text when hovering over orbits
+                f'{rendered_prop_data.loc[sat, 'object_name']} ({sat})<br>'                                                 # Satellite name and NORAD CAT ID
+                f'{'-'*56}<br>'                                                                                             # -----
+                f'{int(abs(lat)):02}° {int(abs(lat)%1*60):02}\' {abs(lat)%1*3600%60:07.4f}\" {lat_lambda(lat)}, '           # Latitude (° ' ')
+                f'{int(abs(lon)):02}° {int(abs(lon)%1*60):02}\' {abs(lon)%1*3600%60:07.4f}\" {lon_lambda(lon)}<br>'         # Longitude (° ' ')
+                f'Radius (Alt): {r/1000:.2f} km ({(r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000:.2f} km)<br>'          # Orbital radius & height (km)
+                f'{'-'*56}<br>'                                                                                             # -----
+                f'{dt} UTC<br>'                                                                                             # Date & time (UTC)
+                f'{epoch} since epoch'                                                                                      # Time since epoch TODO: Format time to DD days HHh, MMm, SSs
+                ) for lat, lon, r, dt, epoch in zip(lats, lons, rs, dts, epochs)
+                ]
 
-        for sat in prop_data.index:
-
-        # Defines label text when hovering over orbits and creates orbit traces
-            # Satellite NORAD CAT ID
-            # Latitude & longitude (° ' ')
-            # Orbital radius & height (km)
-            # Date & time (UTC)
-            # Time since epoch
-
-            text = []
-            NORAD_CAT_ID = sat
-            lat_lambda = lambda x: 'N' if x >= 0 else 'S'
-            lon_lambda = lambda x: 'E' if x >= 0 else 'W'
-
-            for lat, lon, r, dt in pd.concat([prop_data.loc[sat, ['latitude', 'longitude', 'radius']], pd.Series([prop_data_config['datetimes']], ['datetimes'])]):    
-                text.append((
-                    f'NORAD CAT ID: {NORAD_CAT_ID}<br>'
-                    f'{'-'*56}<br>'
-                    f'{int(abs(lat)):02}° {int(abs(lat)%1*60):02}\' {abs(lat)%1*3600%60:07.4f}\" {lat_lambda(lat)}, '
-                    f'{int(abs(lon)):02}° {int(abs(lon)%1*60):02}\' {abs(lon)%1*3600%60:07.4f}\" {lon_lambda(lon)}<br>'
-                    f'Radius (Alt): {r/1000:.2f} km ({(r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000:.2f} km)<br>'
-                    f'{'-'*56}<br>'
-                    f'{dt} UTC<br>'
-                    f'epoch+{self.getEpochDelta(sat)}'
-                    ))
-
-            trace_orbit.append(go.Scatter3d(x               = prop_data.loc[sat, 'x'],
-                                            y               = prop_data.loc[sat, 'y'],
-                                            z               = prop_data.loc[sat, 'z'],
+            trace_orbit.append(go.Scatter3d(x               = rendered_prop_data.loc[sat, 'x'],
+                                            y               = rendered_prop_data.loc[sat, 'y'],
+                                            z               = rendered_prop_data.loc[sat, 'z'],
                                             marker          = dict(size=0.5),
                                             line            = dict(color='white',width=1),
                                             hoverinfo       = 'text',
