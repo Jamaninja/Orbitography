@@ -53,7 +53,8 @@ def configureMetadata(prop_data):
     'PAYLOAD'       : True,
     'ROCKET BODY'   : False,
     'DEBRIS'        : False,
-    'UNKNOWN'       : False
+    'UNKNOWN'       : False,
+    'OTHER'         : False
     }
 
     prop_metadata = {
