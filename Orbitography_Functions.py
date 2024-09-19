@@ -120,7 +120,7 @@ class PlotFunctions:
         '''
         Creates a 3D orbital plot
         '''
-        limit = 100
+        limit = 1000
         with open(prop_metadata_file, 'r') as file:
             prop_metadata = json.load(file)
 
@@ -130,7 +130,6 @@ class PlotFunctions:
             rendered_prop_data = rendered_prop_data.iloc[:limit]
         length      = len(rendered_prop_data)
         dts         = prop_metadata['datetimes']
-        epochs      = [self.getEpochDelta(sat) for sat in rendered_prop_data.index]
 
         lat_lambda  = lambda x: 'N' if x >= 0 else 'S'
         lon_lambda  = lambda x: 'E' if x >= 0 else 'W'
@@ -138,6 +137,7 @@ class PlotFunctions:
         n = 0
         for sat in rendered_prop_data.index:
             lats, lons, rs = rendered_prop_data.loc[sat, ['latitude', 'longitude', 'radius']]
+            epoch = self.getEpochDelta(sat)
             text = [(                                                                                                       # Defines label text when hovering over orbits
                 f'{rendered_prop_data.loc[sat, 'object_name']} ({sat})<br>'                                                 # Satellite name and NORAD CAT ID
                 f'{'-'*56}<br>'                                                                                             # -----
@@ -147,7 +147,7 @@ class PlotFunctions:
                 f'{'-'*56}<br>'                                                                                             # -----
                 f'{dt} UTC<br>'                                                                                             # Date & time (UTC)
                 f'{epoch} since epoch'                                                                                      # Time since epoch TODO: Format time to DD days HHh, MMm, SSs
-                ) for lat, lon, r, dt, epoch in zip(lats, lons, rs, dts, epochs)
+                ) for lat, lon, r, dt in zip(lats, lons, rs, dts)
                 ]
 
             trace_orbit.append(go.Scatter3d(x               = rendered_prop_data.loc[sat, 'x'],
@@ -308,8 +308,8 @@ class SatelliteFunctions:
         max_step        = 1000.0
         init_step       = 60.0
         pos_tolerance   = 1.0
-        orbit_type = OrbitType.CARTESIAN
-        tol = NumericalPropagator.tolerances(pos_tolerance, initial_orbit, orbit_type)
+        orbit_type      = OrbitType.CARTESIAN
+        tol             = NumericalPropagator.tolerances(pos_tolerance, initial_orbit, orbit_type)
 
         integrator = DormandPrince853Integrator(min_step, max_step, 
                                                 JArray_double.cast_(tol[0]),  # Double array of doubles needs to be casted in Python
