@@ -1,202 +1,203 @@
 import pandas as pd
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
+import time
 import sys
 
 from dotenv import load_dotenv
 import os
 load_dotenv()
 
-def spaceTrackRequest(requestQuery):
-    uriBase                 = "https://www.space-track.org"
-    requestLogin            = "/ajaxauth/login"
-    requestCmdAction        = "/basicspacedata/query"
+columns = {'CREATION_DATE':     [],
+            'NORAD_CAT_ID':      '',
+            'OBJECT_NAME':       '',
+            'OBJECT_ID':         '', # COSPAR ID
+            'OBJECT_TYPE':       '', # PAYLOAD, ROCKET BODY, DEBRIS, UNKNOWN, or OTHER
+            'RCS_SIZE':          '',
+            'RCS_SIZE_EST':      {},
+            'MASS_EST':          {},
+            'COUNTRY_CODE':      '',
+            'LAUNCH_DATE':       '',
+            'SITE':              '',
+            'EPOCH':             [],
+            'MEAN_MOTION':       [],
+            'ECCENTRICITY':      [],
+            'INCLINATION':       [],
+            'RA_OF_ASC_NODE':    [],
+            'ARG_OF_PERICENTER': [],
+            'MEAN_ANOMALY':      [],
+            'REV_AT_EPOCH':      [],
+            'BSTAR':             [],
+            'MEAN_MOTION_DOT':   [],
+            'MEAN_MOTION_DDOT':  [],
+            'SEMIMAJOR_AXIS':    [],
+            'PERIOD':            [],
+            'APOAPSIS':          [],
+            'PERIAPSIS':         [],
+            'DECAY_DATE':        '',
+            'TLE_LINE0':         '',
+            'TLE_LINE1':         [],
+            'TLE_LINE2':         []
+            }
+constant    = [col for col in columns if type(columns[col]) == str]
+varying     = [col for col in columns if type(columns[col]) == list]
 
-    id_st   = os.getenv("id_st")
-    pass_st = os.getenv("pass_st")
+def spaceTrackRequest(requestQuery):
+    uriBase                 = 'https://www.space-track.org'
+    requestLogin            = '/ajaxauth/login'
+    requestCmdAction        = '/basicspacedata/query'
+
+    id_st   = os.getenv('id_st')
+    pass_st = os.getenv('pass_st')
 
     with requests.Session() as session:
-        login_response = session.post(uriBase + requestLogin, data = {"identity": id_st, "password": pass_st})
+        login_response = session.post(uriBase + requestLogin, data = {'identity': id_st, 'password': pass_st})
         if login_response.status_code != 200:
-            raise Exception(f"{login_response.status_code}\n{login_response.text}")
+            raise Exception(f'{login_response.status_code}\n{login_response.text}')
                 
         response = session.get(uriBase + requestCmdAction + requestQuery)
     if response.status_code != 200:
-        raise Exception(f"{response.status_code}\n{response.text}")
+        raise Exception(f'{response.status_code}\n{response.text}')
 
     return response.text
 
-def checkEphemerisPath(path):
-    if os.path.exists(f"{path["directory"]}/{path["ephemeris"]}"):
-        mtime_pass = datetime.now() - datetime.fromtimestamp(os.path.getmtime(f"{path["directory"]}/{path["ephemeris"]}"))
-        new_ephemeris_path = f"{path["ephemeris"].split(".")[0]}_2.{path["ephemeris"].split(".")[1]}" # TODO: Check if a database with the new name exists, and iterate respectively
+def updateEphemerides():
+    if os.path.exists(path['ephemerides']['path']):
+        mtime = datetime.fromtimestamp(os.path.getmtime(path['ephemerides']['path']))
+        mtime_delta = f'{(now - mtime).total_seconds()/86400:.1f}'
         
-        epheremis_exist_case = input((
-            f"Ephemeris data already exists. Current data is {(mtime_pass.total_seconds())/86400:.1f} days old.\n"
-             "Would you like to:\n"
-            f" 1  Keep the current ephemeris data, but download a new dataset \"{new_ephemeris_path}\" from the past 30 days to create the database from\n"
-             "[2] Delete the current data and download a new dataset\n"
-             " 3  Keep the current data and do not download a new dataset\n"
-             " >  ")).strip() or "2"
+        epheremis_case = input((
+            f'Ephemerides data already exists. Current data is {mtime_delta} days old.\n'
+             'Would you like to:\n'
+             '[1] Overwrite the ephemerides data\n'
+            f' 2  Create a backup of the current ephemerides data and download a new dataset from the prior {mtime_delta} days\n'
+             ' 3  Proceed with the current ephemerides data\n'
+             ' >  ')).strip() or '1'
         
         while True:
-            match epheremis_exist_case:
-                case "1":
-                    print("Downloading 30 day ephemeris data from SpaceTrack.")
-                    return new_ephemeris_path
+            match epheremis_case:
+                case '1':
+                    break
+
+                case '2':
+                    os.rename(path['ephemerides']['path'], f'{path['directory']}{path['ephemerides']['file']}_Backup_{now.strftime('%Y-%m-%d_%H-%M-%S')}{path['ephemerides']['extn']}')
+                    break
+                
+                case '3':
+                    return 0
+
+                case _:
+                    epheremis_case = input((
+                         'Please enter an option 1 - 3\n'
+                         '[1] Overwrite the ephemerides data\n'
+                        f' 2  Create a backup of the current ephemerides data and download a new dataset from the prior {mtime_delta} days\n'
+                         ' 3  Proceed with the current ephemerides data\n'
+                         ' >  ')).strip() or '1'
                     
-                case "2":
-                    os.remove(f"{path["directory"]}/{path["ephemeris"]}")
-                    print("Downloading 30 day ephemeris data from SpaceTrack.")
-                    return
-                
-                case "3":
-                    return
+        date_range = mtime.strftime('%Y-%m-%d%%20%H:%M:%S--now')
+        if (response := spaceTrackRequest(f'/class/gp/decay_date/null-val/epoch/{date_range}/orderby/norad_cat_id/format/json')) == '[]':
+            print('There have been no changes since the previous update.')
+            return -1
+        else:
+            with open(path['ephemerides']['path'], 'w') as file:
+                file.write(response)
+            return 0
+    
+    else:
+        with open(path['ephemerides']['path'], 'w') as file:
+            file.write(spaceTrackRequest('/class/gp/decay_date/null-val/epoch/>now-30/orderby/norad_cat_id/format/json'))
+        return 0
+                    
+def checkDatabase():
+    if os.path.exists(path['database']['path']): # Checks if the database already exists, then asks the user how they would like to proceed if it does
+        mtime = datetime.fromtimestamp(os.path.getmtime(path['database']['path']))
+        mtime_delta = f'{(now - mtime).total_seconds()/86400:.1f}'
 
-                case _:
-                    epheremis_exist_case = input((
-                         "Please enter a number 1 - 3\n"
-                        f" 1  Keep the current ephemeris data, but download a new dataset \"{new_ephemeris_path}\" from the past 30 days to create the database from\n"
-                         "[2] Delete the current data and download a new dataset\n"
-                         " 3  Keep the current data and do not download a new dataset\n"
-                         " >  ")).strip() or "2"
-
-def checkDatabasePath(path):
-    if os.path.exists(f"{path["directory"]}/{path["database"]}"): # Checks if the database already exists, then asks the user how they would like to proceed if it does
-        mtime_pass = datetime.now() - datetime.fromtimestamp(os.path.getmtime(f"{path["directory"]}/{path["database"]}"))
-        new_database_path = f"{path["database"].split(".")[0]}_2.{path["database"].split(".")[1]}" # TODO: Check if a database with the new name exists, and iterate respectively
-
-        database_exist_case = input((
-            f"{path["database"]} already exists. The database was last updated {(mtime_pass.total_seconds())/86400:.1f} days ago.\n"
-             "Would you like to:\n"
-            f"[1] Create a new database \"{new_database_path}\"\n"
-             " 2  Delete the current database and create a new one\n"
-             " 3  Cancel creating a database\n"
-             " >  ")).strip() or "1"
+        database_case = input((
+            f'{path['database']} already exists. The database was last updated {mtime_delta} days ago.\n'
+             'Would you like to:\n'
+             '[1] Update the database\n'
+             ' 2  Create a backup of the database and create a new one\n'
+             ' 3  Do not update the database\n'
+             ' >  ')).strip() or '1'
 
         while True:
-            match database_exist_case:
-                case "1":
-                    print("Creating database")
-                    return new_database_path
+            match database_case:
+                case '1':
+                    return 0
                 
-                case "2":
-                    os.remove(f"{path["directory"]}/{path["database"]}")
-                    print("Creating database")
-                    return
+                case '2':
+                    os.rename(path['database']['path'], f'{path['directory']}{path['database']['file']}_Backup_{now.strftime('%Y-%m-%d_%H-%M-%S')}{path['database']['extn']}')
+                    return 0
                 
-                case "3":
-                    print("Terminating database update")
-                    sys.exit(0)
+                case '3':
+                    return -1
 
                 case _:
-                    database_exist_case = input((
-                        f"Please enter a number 1 - 3\n"
-                        f"[1] Create a new database \"{new_database_path}\"\n"
-                        " 2  Overwrite the current database\n"
-                        " 3  Terminate the database update process\n"
-                        " >  ")).strip() or "1"
+                    database_case = input((
+                        'Please enter an option 1 - 3\n'
+                        '[1] Update the database\n'
+                        ' 2  Create a backup of the database and create a new one\n'
+                        ' 3  Do not update the database\n'
+                        ' >  ')).strip() or '1'
 
-def downloadEphemeris(path):
-    '''uriBase                 = "https://www.space-track.org"
-    requestLogin            = "/ajaxauth/login"
-    requestCmdAction        = "/basicspacedata/query"
-    requestQuery            = "/class/gp/decay_date/null-val/epoch/>now-30/orderby/norad_cat_id/format/json"
+    else:
+        createDatabase()
+        return 0
 
-    id_st   = os.getenv("id_st")
-    pass_st = os.getenv("pass_st")
-
-    with requests.Session() as session:
-        login_response = session.post(uriBase + requestLogin, data = {"identity": id_st, "password": pass_st})
-        if login_response.status_code != 200:
-            raise Exception(f"{login_response.status_code}\n{login_response.text}")
-                
-        response = session.get(uriBase + requestCmdAction + requestQuery)
-        if response.status_code != 200:
-            raise Exception(f"{response.status_code}\n{response.text}")
-                
-        with open(f"{path["directory"]}/{path["ephemeris"]}", "w") as file:
-            file.write(response.text)'''
+def createDatabase():
+    if not os.path.exists(path['directory']):
+        os.makedirs(path['directory'])
     
-    with open(f"{path["directory"]}/{path["ephemeris"]}", "w") as file:
-        file.write(spaceTrackRequest("/class/gp/decay_date/null-val/epoch/>now-30/orderby/norad_cat_id/format/json"))
+    with open(path['ephemerides']['path'], 'w') as file:
+        file.write((response:= spaceTrackRequest('/class/gp/decay_date/null-val/epoch/>now-30/orderby/norad_cat_id/format/json')))
+    ephemerides = json.loads(response)
 
-def createDatabase(path):
-    if not os.path.exists(path["directory"]):
-        os.makedirs(path["directory"])
-    if (new_ephemeris_path := checkEphemerisPath(path)):
-        path["ephemeris"] = new_ephemeris_path
-    if (new_database_path := checkDatabasePath(path)):
-        path["database"] = new_database_path
-        
-    downloadEphemeris(path)
+    sat_data    = pd.DataFrame(columns=columns.keys())
+    n, length   = 0, len(ephemerides)
+    time_start  = datetime.today()
 
-    with open(f"{path["directory"]}/{path["ephemeris"]}", "r") as file:
-        data = json.load(file)
-
-    columns = {"CREATION_DATE":     [],
-               "NORAD_CAT_ID":      "", # COSPAR (INTLDES) ID also required, need to find how to get data from Space-Track
-               "OBJECT_NAME":       "",
-               "OBJECT_ID":         "",
-               "OBJECT_TYPE":       "", # PAYLOAD, ROCKET BODY, DEBRIS, or UNKNOWN
-               "RCS_SIZE":          "",
-               "RCS_SIZE_EST":      [], #
-               "MASS_EST":          [], #
-               "COUNTRY_CODE":      "",
-               "LAUNCH_DATE":       "",
-               "SITE":              "",
-               "EPOCH":             [],
-               "MEAN_MOTION":       [],
-               "ECCENTRICITY":      [],
-               "INCLINATION":       [],
-               "RA_OF_ASC_NODE":    [],
-               "ARG_OF_PERICENTER": [],
-               "MEAN_ANOMALY":      [],
-               "REV_AT_EPOCH":      [],
-               "BSTAR":             [],
-               "MEAN_MOTION_DOT":   [],
-               "MEAN_MOTION_DDOT":  [],
-               "SEMIMAJOR_AXIS":    [],
-               "PERIOD":            [],
-               "APOAPSIS":          [],
-               "PERIAPSIS":         [],
-               "DECAY_DATE":        "",
-               "TLE_LINE0":         [],
-               "TLE_LINE1":         [],
-               "TLE_LINE2":         []
-               }
-
-    length = len(data)
-    df = pd.DataFrame(columns=columns.keys())
-    constant    = [col for col in columns if type(columns[col]) == str]
-    varying     = [col for col in columns if type(columns[col]) == list]
-    del varying[1:3]
-    n = 0
-
-    for i in data:
-        df.loc[n, constant] = [i[x] for x in constant]
-        df.loc[n, varying] = [[i[x]] for x in varying]
-        df.loc[n, ["RCS_SIZE_EST", "MASS_EST"]] = [[],[]]
+    for ephemeris in ephemerides:
+        sat_data.loc[n, constant] = [ephemeris[x] for x in constant]
+        sat_data.loc[n, varying] = [[ephemeris[x]] for x in varying]
+        sat_data.loc[n, ['RCS_SIZE_EST', 'MASS_EST']] = [{'size': 0, 'size_est': []},{'mass': 0, 'mass_est': []}]
         n += 1
         if not n % 50:
-            print(f"Creating database:  {n/length::06.2%}%")
+            print(f'Creating database:  {n/length:06.2%}    Elapsed time: {str(datetime.today() - time_start)[2:11]}')
 
-    print("Creating database: 100.00%")
-    print("Saving database.")
-    df.to_pickle(f"{path["directory"]}/{path["database"]}")
-    df.to_csv(f"{path["directory"]}/{path["database"].split('.')[0]}.csv")
-    return path
+    print(f'Creating database: 100.00%    Elapsed time: {str(datetime.today() - time_start)[2:11]}')
+    print('Saving database...')
+    sat_data.to_json(path['database']['path'])
+    sat_data.to_csv(f'{path['database']['path'].split('.')[0]}.csv')
 
-def updateDatabase(path):
-    mtime = datetime.fromtimestamp(os.path.getmtime(f"{path["directory"]}/30_Day_Ephemeris.json"))
-    with open(f"{path["directory"]}/{"update_test.json"}", "w") as file:
-        file.write(spaceTrackRequest(f"/class/gp/decay_date/null-val/epoch/>{mtime.strftime("%Y-%m-%d")}%20{mtime.strftime("%H:%M:%S")}/orderby/norad_cat_id/format/json"))
+def updateDatabase():
+    '''if updateEphemerides() == -1:
+        return -1
+    if checkDatabase() == -1:
+        return -1
+    '''
+    sat_data = pd.read_json(path['database']['path'])
+    with open(path['ephemerides']['path'], 'r') as file:
+        ephemerides = json.load(file)
+
+    for index, ephemeris in enumerate(ephemerides):
+        values = [value for key, value in ephemeris.items() if key in varying]
+        for n, i in enumerate(sat_data.loc[index, varying]):
+            i.insert(0, values[n])
+
 
 path = {
-    "directory":    "Ephemeris_Database",
-    "ephemeris":    "Initial_Ephemeris.json",
-    "database":     "Database.pkl"
+    'directory':    'Satellite_Database/',
+    'ephemerides': {'file': 'Ephemerides',
+                    'extn': '.json'},
+    'database':    {'file': 'Database',
+                    'extn': '.json'}
     }
+path['ephemerides']['path'] = f'{path['directory']}{path['ephemerides']['file']}{path['ephemerides']['extn']}'
+path['database']['path']    = f'{path['directory']}{path['database']['file']}{path['database']['extn']}'
 
-createDatabase(path)
+database_limit = 10
+now = datetime.today()
+createDatabase()
+#updateDatabase()

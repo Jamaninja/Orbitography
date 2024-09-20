@@ -2,7 +2,7 @@ __pycache__/
 Emeric_Code/
 Test_Code/
 slr_dataset/
-Ephemeris_Database/
+Satellite_Database/
 .vscode/
 orekit-data.zip
 .env
