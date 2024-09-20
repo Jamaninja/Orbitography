@@ -65,7 +65,7 @@ def configureMetadata(prop_data):
     with open('Propagation_Metadata.json', 'w') as file:
         json.dump(prop_metadata, file)
 
-sat_data    = importDatabase('Ephemeris_Database/Database.pkl')
+sat_data    = importDatabase('Satellite_Database/Database.json')
 prop_data   = propagateOrbits(sat_data)
 configureMetadata(prop_data)
 
