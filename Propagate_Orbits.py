@@ -47,7 +47,7 @@ def propagateOrbits(sat_data):
     prop_data.drop(['pvs', 'pos', 'gps'], axis=1).to_pickle('Propagation_Data.pkl')
     return prop_data
 
-def configureMetadata(prop_data):
+def updateMetadata(prop_data):
     datetimes   = [absolutedate_to_datetime(pv.getDate()) for pv in prop_data.iloc[0]['pvs']]
     objects     = {
     'PAYLOAD'       : True,
@@ -57,17 +57,23 @@ def configureMetadata(prop_data):
     'OTHER'         : False
     }
 
-    prop_metadata = {
-        'datetimes' : [dt.strftime('%Y-%m-%d %H:%M:%S') for dt in datetimes],
-        'objects'   : objects
-        }
-    
-    with open('Propagation_Metadata.json', 'w') as file:
-        json.dump(prop_metadata, file)
+    with open((metadata_file := 'Metadata.json'), 'r') as file:
+        metadata = json.load(file)
 
-sat_data    = importDatabase('Satellite_Database/Database.json')
+    metadata['objects']     = objects
+    metadata['datetimes']   = [dt.strftime('%Y-%m-%d %H:%M:%S') for dt in datetimes]
+
+    with open(metadata_file, 'w') as file:
+        json.dump(metadata, file)
+
+
+
+with open((metadata_file := 'Metadata.json'), 'r') as file:
+    metadata = json.load(file)
+
+sat_data    = importDatabase(metadata['path']['database'])
 prop_data   = propagateOrbits(sat_data)
-configureMetadata(prop_data)
+updateMetadata(prop_data)
 
 print('Tracing orbits...')
 pf = PlotFunctions(prop_data_file='Propagation_Data.pkl')
