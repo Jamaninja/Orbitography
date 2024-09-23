@@ -116,20 +116,20 @@ class PlotFunctions:
 
         return timedelta(seconds = now.durationFrom(datetime_to_absolutedate(self.prop_data.loc[sat, 'epoch'])))
 
-    def plotOrbits(self, prop_metadata_file):
+    def plotOrbits(self, metadata_file):
         '''
         Creates a 3D orbital plot
         '''
         limit = 1000
-        with open(prop_metadata_file, 'r') as file:
-            prop_metadata = json.load(file)
+        with open(metadata_file, 'r') as file:
+            metadata = json.load(file)
 
         trace_orbit = []
-        rendered_prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in prop_metadata['objects'].items() if value])]
+        rendered_prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in metadata['objects'].items() if value])]
         if limit:
             rendered_prop_data = rendered_prop_data.iloc[:limit]
         length      = len(rendered_prop_data)
-        dts         = prop_metadata['datetimes']
+        dts         = metadata['datetimes']
 
         lat_lambda  = lambda x: 'N' if x >= 0 else 'S'
         lon_lambda  = lambda x: 'E' if x >= 0 else 'W'
@@ -238,7 +238,7 @@ class SatelliteFunctions:
                         The target date to propagate the orbit until
 
         Returns:
-            pvs: list[TimeStampedPVCoordinates]
+            list[TimeStampedPVCoordinates]
                 Array of time-stamped position and velocity coordinates
         '''
 

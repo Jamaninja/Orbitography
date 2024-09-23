@@ -7,7 +7,7 @@ Satellite_Database/
 orekit-data.zip
 .env
 Propagation_Data.pkl
-Propagation_Metadata.json
+Metadata.json
 tle.txt
 gpt3_1.grd
 gpt3_5.grd
