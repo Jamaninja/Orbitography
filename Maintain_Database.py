@@ -9,38 +9,37 @@ from dotenv import load_dotenv
 import os
 load_dotenv()
 
-columns = {'CREATION_DATE':     [],
-            'NORAD_CAT_ID':      '',
-            'OBJECT_NAME':       '',
-            'OBJECT_ID':         '', # COSPAR ID
-            'OBJECT_TYPE':       '', # PAYLOAD, ROCKET BODY, DEBRIS, UNKNOWN, or OTHER
-            'RCS_SIZE':          '',
-            'RCS_SIZE_EST':      {},
-            'MASS_EST':          {},
-            'COUNTRY_CODE':      '',
-            'LAUNCH_DATE':       '',
-            'SITE':              '',
-            'EPOCH':             [],
-            'MEAN_MOTION':       [],
-            'ECCENTRICITY':      [],
-            'INCLINATION':       [],
-            'RA_OF_ASC_NODE':    [],
-            'ARG_OF_PERICENTER': [],
-            'MEAN_ANOMALY':      [],
-            'REV_AT_EPOCH':      [],
-            'BSTAR':             [],
-            'MEAN_MOTION_DOT':   [],
-            'MEAN_MOTION_DDOT':  [],
-            'SEMIMAJOR_AXIS':    [],
-            'PERIOD':            [],
-            'APOAPSIS':          [],
-            'PERIAPSIS':         [],
-            'DECAY_DATE':        '',
-            'TLE_LINE0':         '',
-            'TLE_LINE1':         [],
-            'TLE_LINE2':         []
-            }
-constant    = [col for col in columns if type(columns[col]) == str]
+columns = {'OBJECT_NAME':       '', # Not all object information is initially known, so despite being "constant", these values may still be updated over time 
+           'OBJECT_ID':         '', # COSPAR ID
+           'OBJECT_TYPE':       '', # PAYLOAD, ROCKET BODY, DEBRIS, UNKNOWN, or OTHER
+           'RCS_SIZE':          '',
+           'RCS_SIZE_EST':      {}, # RCS size and satellite mass can both be predicted using machine learning. These columns are preemptively added for later use
+           'MASS_EST':          {}, # They will store an array of estimated values, as well as the statistical mean (assuming all estimated values are normally distributed) 
+           'COUNTRY_CODE':      '',
+           'LAUNCH_DATE':       '',
+           'SITE':              '',
+           'EPOCH':             [], # Orbital history data is stored, not overwriten, to enable more accurate ML estimates for RCS size and satellite mass
+           'MEAN_MOTION':       [], # History will be deleted after set number of updates, to prevent database bloat
+           'ECCENTRICITY':      [],
+           'INCLINATION':       [],
+           'RA_OF_ASC_NODE':    [],
+           'ARG_OF_PERICENTER': [],
+           'MEAN_ANOMALY':      [],
+           'REV_AT_EPOCH':      [],
+           'BSTAR':             [],
+           'MEAN_MOTION_DOT':   [],
+           'MEAN_MOTION_DDOT':  [],
+           'SEMIMAJOR_AXIS':    [],
+           'PERIOD':            [],
+           'APOAPSIS':          [],
+           'PERIAPSIS':         [],
+           'DECAY_DATE':        '',
+           'TLE_LINE0':         '', # TLE_LINE0
+           'TLE_LINE1':         [],
+           'TLE_LINE2':         [],
+           'CREATION_DATE':     []
+           }
+constant    = [col for col in columns if type(columns[col]) == str]     # constant and varying are perhaps not the most accurate names, but they suffice
 varying     = [col for col in columns if type(columns[col]) == list]
 
 def spaceTrackRequest(requestQuery):
@@ -52,8 +51,8 @@ def spaceTrackRequest(requestQuery):
             The desired Space-Track API query
     
     Returns:
-        : list[dict]
-            A list of for all ephemerides for objects in orbit that have been updated in the requested time period
+        response.text: list[dict]
+            A list of for all ephemerides for objects in orbit that have been updated in the requested time period, loaded from the json object received from Space-Track
     '''
 
     uriBase                 = 'https://www.space-track.org'
@@ -73,6 +72,19 @@ def spaceTrackRequest(requestQuery):
     return json.loads(response.text)
                    
 def checkDatabase(ephemerides_response):
+    '''
+    Checks if any ephemerides data is present. If not, it downloads a 30 day ephemerides dataset. Else, gives the user the option of overwriting or backing up the current dataset,
+    before downloading all ephemerides updates since the last update.
+
+    Returns:
+        -1:
+            Database does not need updating, signals to terminate database update
+        0:
+            User wishes the update the database, signals to update the database from ephemerides data
+        2:
+            User wishes to create a backup of the database, signals to backup current database before updating
+    '''
+
     if os.path.exists(path['database']): # Checks if the database already exists, then asks the user how they would like to proceed if it does
         ctime = datetime.fromtimestamp(os.path.getctime(path['database']))
         if (ctime_delta := (now - ctime).total_seconds()/86400) >= 1:
@@ -101,39 +113,33 @@ def checkDatabase(ephemerides_response):
 
     else:
         createDatabase(ephemerides_response)
+        return -1
     
     return 0
 
 def createDatabase(ephemerides_response):
     '''
-    Downloads a new 30 day ephemerides dataset and creates an initial database from it
+    Creates an a database of orbital objects, from new or pre-existing ephemerides data from Space-Track.org
     Updates the Metadata.json file with the file and directory paths, creating the file if required
     '''
 
     if not os.path.exists(path['directory']):
         os.makedirs(path['directory'])
     
-    if ephemerides_response == 3:
-        with open(path['ephemerides']) as file:
-            ephemerides = json.load(file)
-    else:
-        if (ephemerides := downloadEphemerides()) == -1:
+    match ephemerides_response:
+        case 0:
+            print('Downloading 30-day ephemerides data from Space-Track.org.')
+            downloadEphemerides()
+        case -1:
             Exception('There is no ephemerides data to create a database from.')
             return -1
+        
+    ephem_data  = pd.read_json(path['ephemerides']).set_index('NORAD_CAT_ID')
+    sat_data    = pd.DataFrame(index = ephem_data.index, columns=columns.keys())
+    sat_data.update(ephem_data)
+    sat_data.update(sat_data[varying].map(lambda x: [x]))
+    sat_data.update(sat_data[['RCS_SIZE_EST', 'MASS_EST']].map(lambda x: [{'size': 0, 'size_est': []}]))
 
-    sat_data    = pd.DataFrame(columns=columns.keys())
-    length      = len(ephemerides)
-    time_start  = datetime.today()
-
-    for index, ephemeris in enumerate(ephemerides):
-        sat_data.loc[index, constant] = [ephemeris[x] for x in constant]
-        sat_data.loc[index, varying] = [[ephemeris[x]] for x in varying]
-        sat_data.loc[index, ['RCS_SIZE_EST', 'MASS_EST']] = [{'size': 0, 'size_est': []},{'mass': 0, 'mass_est': []}]
-        if not index % 50:
-            print(f'Creating database:  {index/length:06.2%}    Elapsed time: {str(datetime.today() - time_start)[2:11]}')
-
-    print(f'Creating database: 100.00%    Elapsed time: {str(datetime.today() - time_start)[2:11]}')
-    print('Saving database...')
     sat_data.to_json(path['database'])
     sat_data.to_csv(f'{path['database'].split('.')[0]}.csv')
 
@@ -151,7 +157,9 @@ def downloadEphemerides(**kwargs):
                 The requested updated period, formatted to Space-Track's API. Defaults to the previous 30 days
     
     Returns:
-        : list[dict]
+        -1:
+            Indicates that there is no new ephemerides data, signals to terminate database update
+        response: list[dict]
             A list of for all ephemerides for objects in orbit that have been updated in the requested time period
     '''
 
@@ -168,6 +176,14 @@ def updateEphemerides():
     '''
     Checks if any ephemerides data is present. If not, it downloads a 30 day ephemerides dataset. Else, gives the user the option of overwriting or backing up the current dataset,
     before downloading all ephemerides updates since the last update.
+
+    Returns:
+        -1:
+            Indicates that there is no new ephemerides data, signals to terminate database update
+        0:
+            Update the database with new ephemerides data, signals to download ephemerides data dating back to last update
+        3:
+            Update the database with existing ephemerides data, signals to not download new ephemerides data
     '''
 
     if os.path.exists(path['ephemerides']):
@@ -224,10 +240,10 @@ def updateDatabase():
     length      = len(ephem_data)
     time_start  = datetime.today()
     
-    update = ephem_data[ephem_data.loc[:, 'NORAD_CAT_ID'].isin(sat_data.loc[:, 'NORAD_CAT_ID'])]
-    sat_data.loc[:, varying] = ephem_data.loc[:, varying].apply(lambda xs: list(map(lambda x: xs.insert(0, x), xs)))
+    update = ephem_data.loc[:, varying][ephem_data.loc[:, 'NORAD_CAT_ID'].isin(sat_data.loc[:, 'NORAD_CAT_ID'])].set_index('NORAD_CAT_ID')
+    sat_data.loc[:, varying] = sat_data.loc[:, varying].apply(lambda xs: list(map(lambda x: xs.insert(0, x), xs)))
     
-    add = ephem_data[~update.loc[:, 'NORAD_CAT_ID'].isin(ephem_data.loc[:, 'NORAD_CAT_ID'])]
+    add = ephem_data[~ephem_data.loc[:, 'NORAD_CAT_ID'].isin(update.loc[:, 'NORAD_CAT_ID'])]
 
         
 '''
@@ -271,5 +287,5 @@ path['database']    = path['directory'] + path['database']
 
 database_limit = 10
 now = datetime.today()
-#createDatabase()
-updateDatabase()
+#createDatabase(0)
+#updateDatabase()
