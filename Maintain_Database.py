@@ -1,202 +1,234 @@
 import pandas as pd
 import requests
 import json
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
+import time
 import sys
 
 from dotenv import load_dotenv
 import os
 load_dotenv()
 
+columns = ['OBJECT_NAME',
+           'OBJECT_ID',     # COSPAR ID
+           'OBJECT_TYPE',   # PAYLOAD, ROCKET BODY, DEBRIS, UNKNOWN, or OTHER
+           'RCS_SIZE',
+           'RCS_SIZE_EST',  # RCS size and satellite mass can both be predicted using machine learning. These columns are preemptively added for later use
+           'MASS_EST',      # They will store an array of estimated values, as well as the statistical mean (assuming all estimated values are normally distributed)
+           'COUNTRY_CODE',
+           'LAUNCH_DATE',
+           'SITE',
+           'EPOCH',
+           'MEAN_MOTION',
+           'ECCENTRICITY',
+           'INCLINATION',
+           'RA_OF_ASC_NODE',
+           'ARG_OF_PERICENTER',
+           'MEAN_ANOMALY',
+           'REV_AT_EPOCH',
+           'BSTAR',
+           'MEAN_MOTION_DOT',
+           'MEAN_MOTION_DDOT', 
+           'SEMIMAJOR_AXIS',
+           'PERIOD',
+           'APOAPSIS',
+           'PERIAPSIS',
+           'DECAY_DATE',
+           'TLE_LINE0',
+           'TLE_LINE1',
+           'TLE_LINE2',
+           'CREATION_DATE']
+
 def spaceTrackRequest(requestQuery):
-    uriBase                 = "https://www.space-track.org"
-    requestLogin            = "/ajaxauth/login"
-    requestCmdAction        = "/basicspacedata/query"
+    '''
+    Sends a query to Space-Track.org and returns the response
 
-    id_st   = os.getenv("id_st")
-    pass_st = os.getenv("pass_st")
-
-    with requests.Session() as session:
-        login_response = session.post(uriBase + requestLogin, data = {"identity": id_st, "password": pass_st})
-        if login_response.status_code != 200:
-            raise Exception(f"{login_response.status_code}\n{login_response.text}")
-                
-        response = session.get(uriBase + requestCmdAction + requestQuery)
-    if response.status_code != 200:
-        raise Exception(f"{response.status_code}\n{response.text}")
-
-    return response.text
-
-def checkEphemerisPath(path):
-    if os.path.exists(f"{path["directory"]}/{path["ephemeris"]}"):
-        mtime_pass = datetime.now() - datetime.fromtimestamp(os.path.getmtime(f"{path["directory"]}/{path["ephemeris"]}"))
-        new_ephemeris_path = f"{path["ephemeris"].split(".")[0]}_2.{path["ephemeris"].split(".")[1]}" # TODO: Check if a database with the new name exists, and iterate respectively
-        
-        epheremis_exist_case = input((
-            f"Ephemeris data already exists. Current data is {(mtime_pass.total_seconds())/86400:.1f} days old.\n"
-             "Would you like to:\n"
-            f" 1  Keep the current ephemeris data, but download a new dataset \"{new_ephemeris_path}\" from the past 30 days to create the database from\n"
-             "[2] Delete the current data and download a new dataset\n"
-             " 3  Keep the current data and do not download a new dataset\n"
-             " >  ")).strip() or "2"
-        
-        while True:
-            match epheremis_exist_case:
-                case "1":
-                    print("Downloading 30 day ephemeris data from SpaceTrack.")
-                    return new_ephemeris_path
-                    
-                case "2":
-                    os.remove(f"{path["directory"]}/{path["ephemeris"]}")
-                    print("Downloading 30 day ephemeris data from SpaceTrack.")
-                    return
-                
-                case "3":
-                    return
-
-                case _:
-                    epheremis_exist_case = input((
-                         "Please enter a number 1 - 3\n"
-                        f" 1  Keep the current ephemeris data, but download a new dataset \"{new_ephemeris_path}\" from the past 30 days to create the database from\n"
-                         "[2] Delete the current data and download a new dataset\n"
-                         " 3  Keep the current data and do not download a new dataset\n"
-                         " >  ")).strip() or "2"
-
-def checkDatabasePath(path):
-    if os.path.exists(f"{path["directory"]}/{path["database"]}"): # Checks if the database already exists, then asks the user how they would like to proceed if it does
-        mtime_pass = datetime.now() - datetime.fromtimestamp(os.path.getmtime(f"{path["directory"]}/{path["database"]}"))
-        new_database_path = f"{path["database"].split(".")[0]}_2.{path["database"].split(".")[1]}" # TODO: Check if a database with the new name exists, and iterate respectively
-
-        database_exist_case = input((
-            f"{path["database"]} already exists. The database was last updated {(mtime_pass.total_seconds())/86400:.1f} days ago.\n"
-             "Would you like to:\n"
-            f"[1] Create a new database \"{new_database_path}\"\n"
-             " 2  Delete the current database and create a new one\n"
-             " 3  Cancel creating a database\n"
-             " >  ")).strip() or "1"
-
-        while True:
-            match database_exist_case:
-                case "1":
-                    print("Creating database")
-                    return new_database_path
-                
-                case "2":
-                    os.remove(f"{path["directory"]}/{path["database"]}")
-                    print("Creating database")
-                    return
-                
-                case "3":
-                    print("Terminating database update")
-                    sys.exit(0)
-
-                case _:
-                    database_exist_case = input((
-                        f"Please enter a number 1 - 3\n"
-                        f"[1] Create a new database \"{new_database_path}\"\n"
-                        " 2  Overwrite the current database\n"
-                        " 3  Terminate the database update process\n"
-                        " >  ")).strip() or "1"
-
-def downloadEphemeris(path):
-    '''uriBase                 = "https://www.space-track.org"
-    requestLogin            = "/ajaxauth/login"
-    requestCmdAction        = "/basicspacedata/query"
-    requestQuery            = "/class/gp/decay_date/null-val/epoch/>now-30/orderby/norad_cat_id/format/json"
-
-    id_st   = os.getenv("id_st")
-    pass_st = os.getenv("pass_st")
-
-    with requests.Session() as session:
-        login_response = session.post(uriBase + requestLogin, data = {"identity": id_st, "password": pass_st})
-        if login_response.status_code != 200:
-            raise Exception(f"{login_response.status_code}\n{login_response.text}")
-                
-        response = session.get(uriBase + requestCmdAction + requestQuery)
-        if response.status_code != 200:
-            raise Exception(f"{response.status_code}\n{response.text}")
-                
-        with open(f"{path["directory"]}/{path["ephemeris"]}", "w") as file:
-            file.write(response.text)'''
+    Args:
+        requestQuery: string
+            The desired Space-Track API query
     
-    with open(f"{path["directory"]}/{path["ephemeris"]}", "w") as file:
-        file.write(spaceTrackRequest("/class/gp/decay_date/null-val/epoch/>now-30/orderby/norad_cat_id/format/json"))
+    Returns:
+        response.text: list[dict]
+            A list of for all ephemerides for objects in orbit that have been updated in the requested time period, loaded from the json object received from Space-Track
+    '''
 
-def createDatabase(path):
-    if not os.path.exists(path["directory"]):
-        os.makedirs(path["directory"])
-    if (new_ephemeris_path := checkEphemerisPath(path)):
-        path["ephemeris"] = new_ephemeris_path
-    if (new_database_path := checkDatabasePath(path)):
-        path["database"] = new_database_path
+    uriBase                 = 'https://www.space-track.org'
+    requestLogin            = '/ajaxauth/login'
+    requestCmdAction        = '/basicspacedata/query'
+
+    id_st   = os.getenv('id_st')
+    pass_st = os.getenv('pass_st')
+
+    with requests.Session() as session:
+        if (login_response := session.post(uriBase + requestLogin, data = {'identity': id_st, 'password': pass_st})).status_code != 200:
+            raise Exception(f'{login_response.status_code}\n{login_response.text}')
         
-    downloadEphemeris(path)
+        if (response := session.get(uriBase + requestCmdAction + requestQuery)).status_code != 200:
+            raise Exception(f'{response.status_code}\n{response.text}')
 
-    with open(f"{path["directory"]}/{path["ephemeris"]}", "r") as file:
-        data = json.load(file)
+    return json.loads(response.text)
+                   
+def createDatabase():
+    '''
+    Creates an a database of orbital objects, from new or pre-existing ephemerides data from Space-Track.org
+    Updates the Metadata.json file with the file and directory paths, creating the file if required
+    '''
 
-    columns = {"CREATION_DATE":     [],
-               "NORAD_CAT_ID":      "", # COSPAR (INTLDES) ID also required, need to find how to get data from Space-Track
-               "OBJECT_NAME":       "",
-               "OBJECT_ID":         "",
-               "OBJECT_TYPE":       "", # PAYLOAD, ROCKET BODY, DEBRIS, or UNKNOWN
-               "RCS_SIZE":          "",
-               "RCS_SIZE_EST":      [], #
-               "MASS_EST":          [], #
-               "COUNTRY_CODE":      "",
-               "LAUNCH_DATE":       "",
-               "SITE":              "",
-               "EPOCH":             [],
-               "MEAN_MOTION":       [],
-               "ECCENTRICITY":      [],
-               "INCLINATION":       [],
-               "RA_OF_ASC_NODE":    [],
-               "ARG_OF_PERICENTER": [],
-               "MEAN_ANOMALY":      [],
-               "REV_AT_EPOCH":      [],
-               "BSTAR":             [],
-               "MEAN_MOTION_DOT":   [],
-               "MEAN_MOTION_DDOT":  [],
-               "SEMIMAJOR_AXIS":    [],
-               "PERIOD":            [],
-               "APOAPSIS":          [],
-               "PERIAPSIS":         [],
-               "DECAY_DATE":        "",
-               "TLE_LINE0":         [],
-               "TLE_LINE1":         [],
-               "TLE_LINE2":         []
-               }
+    if not os.path.exists(path['directory']):
+        os.makedirs(path['directory'])
+    
+    print('Downloading 30-day ephemerides data from Space-Track.org.')
+    if downloadEphemerides() == -1:
+        Exception('There is no ephemerides data to create a database from.')
+        return -1
+        
+    ephem_data  = pd.read_json(path['ephemerides']).set_index('NORAD_CAT_ID')
+    sat_data    = pd.DataFrame(index = ephem_data.index, columns=columns)
+    sat_data.update(ephem_data)
+    sat_data.update(sat_data[['RCS_SIZE_EST', 'MASS_EST']].map(lambda x: [{'size': 0, 'size_est': []}]))
 
-    length = len(data)
-    df = pd.DataFrame(columns=columns.keys())
-    constant    = [col for col in columns if type(columns[col]) == str]
-    varying     = [col for col in columns if type(columns[col]) == list]
-    del varying[1:3]
-    n = 0
+    sat_data.to_json(path['database'])
+    sat_data.to_csv(f'{path['database'].split('.')[0]}.csv')
 
-    for i in data:
-        df.loc[n, constant] = [i[x] for x in constant]
-        df.loc[n, varying] = [[i[x]] for x in varying]
-        df.loc[n, ["RCS_SIZE_EST", "MASS_EST"]] = [[],[]]
-        n += 1
-        if not n % 50:
-            print(f"Creating database:  {n/length::06.2%}%")
+    updateMetadata()
 
-    print("Creating database: 100.00%")
-    print("Saving database.")
-    df.to_pickle(f"{path["directory"]}/{path["database"]}")
-    df.to_csv(f"{path["directory"]}/{path["database"].split('.')[0]}.csv")
-    return path
+    return 0
 
-def updateDatabase(path):
-    mtime = datetime.fromtimestamp(os.path.getmtime(f"{path["directory"]}/30_Day_Ephemeris.json"))
-    with open(f"{path["directory"]}/{"update_test.json"}", "w") as file:
-        file.write(spaceTrackRequest(f"/class/gp/decay_date/null-val/epoch/>{mtime.strftime("%Y-%m-%d")}%20{mtime.strftime("%H:%M:%S")}/orderby/norad_cat_id/format/json"))
+def downloadEphemerides(date_range='>now-30'):
+    '''
+    Downloads the latest ephemerides within the requested time range
+
+    Args:
+        date_range: string
+            The requested updated period, formatted to Space-Track's API. Defaults to the previous 30 days
+    
+    Returns:
+        -1:
+            Indicates that there is no new ephemerides data, signals to terminate database update
+        response: list[dict]
+            A list of for all ephemerides for objects in orbit that have been updated in the requested time period
+    '''
+
+    if (response := spaceTrackRequest(f'/class/gp/decay_date/null-val/epoch/{date_range}/orderby/norad_cat_id/format/json')) == []:
+        return -1
+    else:
+        with open(path['ephemerides'], 'w') as file:
+            json.dump(response, file)
+        return response
+
+def updateEphemerides(manual=False):
+    '''
+    Checks if any ephemerides data is present. If not, it downloads a 30 day ephemerides dataset. Else, gives the user the option of overwriting or backing up the current dataset,
+    before downloading all ephemerides updates since the last update.
+
+    Returns:
+        0:
+            Update the database with new ephemerides data, signals to download ephemerides data dating back to last update
+        3:
+            Update the database with existing ephemerides data, signals to not download new ephemerides data
+        -1:
+            Indicates that there is no new ephemerides data, signals to terminate database update
+    '''
+    if manual:
+        if os.path.exists(path['ephemerides']):
+            ctime = datetime.fromtimestamp(os.path.getctime(path['ephemerides']))
+            if (ctime_delta := (now - ctime).total_seconds()/86400) >= 1:
+                ctime_delta = f'{ctime_delta:.1f} days'
+            else:
+                ctime_delta = f'{ctime_delta*24:.1f} hours'
+            
+            print((f'Ephemerides data already exists. Current data is {ctime_delta} old.\n'
+                    'Would you like to:'))
+            while (epheremides_case := input((
+                '[1] Backup the current ephemerides data before updating\n'
+               f' 2  Overwrite the ephemerides data with updated data\n'
+                ' 3  Proceed with the current ephemerides data\n'
+                ' >  ')).strip() or '1') not in ['1', '2', '3']:
+                
+                time.sleep(0.5)
+                print('Please eneter an option 1 - 3:')
+            
+            match epheremides_case:
+                case '1':
+                    os.rename(path['ephemerides'], f'{path['ephemerides'].split('.')[0]}_Backup_{now.strftime('%Y-%m-%d_%H-%M-%S')}.json')
+                case '3':
+                    return 3 
+
+            response = downloadEphemerides(date_range=ctime.strftime('%Y-%m-%d%%20%H:%M:%S--now'))
+        
+        else:
+            response = downloadEphemerides()
+        
+        if response == -1:
+            print('There have been no ephemerides updates in the requested time interval.')
+            return -1
+        else:
+            return 0
+    
+    else:
+        if os.path.exists(path['ephemerides']):
+            ctime = datetime.fromtimestamp(os.path.getctime(path['ephemerides']))
+            os.rename(path['ephemerides'], f'{path['ephemerides'].split('.')[0]}_Backup_{now.strftime('%Y-%m-%d_%H-%M-%S')}.json')
+            response = downloadEphemerides(date_range=ctime.strftime('%Y-%m-%d%%20%H:%M:%S--now'))
+        else:
+            response = downloadEphemerides()
+        
+        if response == -1:
+            return -1
+        else:
+            return 0
+
+def updateDatabase(manual=False, backup=True):
+    if updateEphemerides(manual=manual) == -1:
+        if manual:
+            print('There is no new data to update the database with.\nCancelling update.')
+        else:
+            # Output log file stating ephemerides update returned blank @ TIME
+            pass
+        return -1
+    
+    ephem_data = pd.read_json(path['ephemerides']).set_index('NORAD_CAT_ID')
+    sat_data = pd.read_json(path['database'])
+
+    if backup:
+        os.rename(path['database'], f'{path['database'].split('.')[0]}_Backup_{now.strftime('%Y-%m-%d_%H-%M-%S')}.json')
+
+    sat_data.update(ephem_data)
+    new_sats = ephem_data[~ephem_data.index.isin(sat_data.index)]
+    sat_data = pd.concat([sat_data, new_sats])
+
+    sat_data.to_json(path['database']['path'])
+    sat_data.to_csv(f'{path['database']['path'].split('.')[0]}.csv')
+
+    output_log = ( 'Update Log.'                            # TODO: Finish writing output log
+                  f'Date: {now.strftime('%Y-%m-%d')}'
+                  f'Time: {now.strftime('%H:%M:%S')}'
+                  f'{len(ephem_data)} objects added.')
+
+def updateMetadata():
+    '''
+    Updates the Metadata.json file with the file and directory paths, creating the file if required
+    '''
+
+    if os.path.exists((metadata_file := 'Metadata.json')):
+        with open(metadata_file, 'r') as file:
+            metadata = json.load(file)
+        metadata['path'] = path
+        with open(metadata_file, 'w') as file:
+            json.dump(metadata, file)
+    else:
+        with open(metadata_file, 'x') as file:
+            json.dump({'path': path}, file)
 
 path = {
-    "directory":    "Ephemeris_Database",
-    "ephemeris":    "Initial_Ephemeris.json",
-    "database":     "Database.pkl"
+    'directory':    'Satellite_Database/',
+    'ephemerides':  'Ephemerides.json',
+    'database':     'Database.json'
     }
+path['ephemerides'] = path['directory'] + path['ephemerides']
+path['database']    = path['directory'] + path['database']
 
-createDatabase(path)
+database_limit = 10
+now = datetime.today()
+#createDatabase()
+updateDatabase()
