@@ -10,7 +10,7 @@ import json
 
 def importDatabase(database_path):
     sat_data        = pd.read_json(database_path).filter(['OBJECT_NAME', 'OBJECT_TYPE', 'TLE_LINE1', 'TLE_LINE2'])
-    sat_data['TLE'] = sat_data[['TLE_LINE1', 'TLE_LINE2']].apply(lambda x: (x.iloc[0][0], x.iloc[1][0]), axis=1)    # Combines most recent TLE values from TLE_LINE1 and TLE_LINE2 
+    sat_data['TLE'] = sat_data[['TLE_LINE1', 'TLE_LINE2']].apply(lambda x: (x.iloc[0], x.iloc[1]), axis=1)    # Combines most recent TLE values from TLE_LINE1 and TLE_LINE2 
     sat_data        = sat_data.drop(['TLE_LINE1', 'TLE_LINE2'], axis=1)                                             # into a tuple in a new column TLE
 
     return sat_data
