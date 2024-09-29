@@ -21,17 +21,83 @@ from java.io import File # type: ignore
 
 import pandas as pd
 import numpy as np
+import os
 import json
-from datetime import datetime, timedelta, UTC
+import requests
+import time
 import plotly.graph_objs as go
-from PIL import Image
 
-now = datetime.now(UTC)
-now = datetime_to_absolutedate(now - timedelta(seconds=now.second, microseconds=now.microsecond))
+from datetime import datetime, timedelta, UTC
+from PIL import Image
+from dotenv import load_dotenv
+load_dotenv()
+
+script_path = os.path.dirname(os.path.abspath(__file__))
+os.chdir(script_path)
+
+now_UTC     = datetime.now(UTC)
+now_UTC     = datetime_to_absolutedate(now_UTC - timedelta(seconds=now_UTC.second, microseconds=now_UTC.microsecond))
+
+class DatabaseFunctions:
+    def __init__(self):
+        with open('Metadata.json', 'r') as file:
+            self.path    = json.load(file)['path']
+
+    def downloadEphemerides(self, date_range='>now-30'):
+        '''
+        Downloads the latest ephemerides within the requested time range
+
+        Args:
+            date_range: string
+                The requested updated period, formatted to Space-Track's API. Defaults to the previous 30 days
+        
+        Returns:
+            -1:
+                Indicates that there is no new ephemerides data, signals to terminate database update
+            response: list[dict]
+                A list of for all ephemerides for objects in orbit that have been updated in the requested time period
+        '''
+
+        if (response := self.spaceTrackRequest(f'/class/gp/decay_date/null-val/epoch/{date_range}/orderby/norad_cat_id/format/json')) == []:
+            return -1
+        else:
+            with open(self.path['ephemerides'], 'w') as file:
+                json.dump(response, file)
+            return response
+        
+    def spaceTrackRequest(self, requestQuery):
+        '''
+        Sends a query to Space-Track.org and returns the response
+
+        Args:
+            requestQuery: string
+                The desired Space-Track API query
+        
+        Returns:
+            response.text: list[dict]
+                A list of for all ephemerides for objects in orbit that have been updated in the requested time period, loaded from the json object received from Space-Track
+        '''
+
+        uriBase                 = 'https://www.space-track.org'
+        requestLogin            = '/ajaxauth/login'
+        requestCmdAction        = '/basicspacedata/query'
+
+        id_st   = os.getenv('id_st')
+        pass_st = os.getenv('pass_st')
+
+        with requests.Session() as session:
+            if (login_response := session.post(uriBase + requestLogin, data = {'identity': id_st, 'password': pass_st})).status_code != 200:
+                raise Exception(f'{login_response.status_code}\n{login_response.text}')
+            
+            if (response := session.get(uriBase + requestCmdAction + requestQuery)).status_code != 200:
+                raise Exception(f'{response.status_code}\n{response.text}')
+
+        return json.loads(response.text)
+
 
 class PlotFunctions:
     def __init__(self, prop_data_file):
-        self.prop_data = pd.read_pickle(prop_data_file)
+        self.prop_data = pd.read_json(prop_data_file)
 
     def createSpheroid(self, texture, equatorial_radius, flattening=0):
         '''
@@ -113,14 +179,14 @@ class PlotFunctions:
         Returns:
             TimeDelta of time since epoch
         '''
+        epoch = datetime_to_absolutedate(datetime.strptime(self.prop_data.loc[sat, 'epoch'], '%Y/%m/%d %H:%M:%S.%f'))
+        return timedelta(seconds = now_UTC.durationFrom(epoch))
 
-        return timedelta(seconds = now.durationFrom(datetime_to_absolutedate(self.prop_data.loc[sat, 'epoch'])))
-
-    def plotOrbits(self, metadata_file):
+    def plotOrbits(self, metadata_file, limit=0):
         '''
         Creates a 3D orbital plot
         '''
-        limit = 1000
+
         with open(metadata_file, 'r') as file:
             metadata = json.load(file)
 
@@ -128,13 +194,13 @@ class PlotFunctions:
         rendered_prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in metadata['objects'].items() if value])]
         if limit:
             rendered_prop_data = rendered_prop_data.iloc[:limit]
-        length      = len(rendered_prop_data)
         dts         = metadata['datetimes']
 
         lat_lambda  = lambda x: 'N' if x >= 0 else 'S'
         lon_lambda  = lambda x: 'E' if x >= 0 else 'W'
 
-        n = 0
+        n       = 0
+        length  = len(rendered_prop_data)
         for sat in rendered_prop_data.index:
             lats, lons, rs = rendered_prop_data.loc[sat, ['latitude', 'longitude', 'radius']]
             epoch = self.getEpochDelta(sat)
@@ -229,7 +295,7 @@ class SatelliteFunctions:
                 Provide either duration or start AND end
 
                     duration: int or float
-                        Number of days from now to propagate the orbit
+                        Number of days from now_UTC to propagate the orbit
 
                     start: AbsoluteDate
                         The start date to propagate the orbit from
@@ -249,7 +315,7 @@ class SatelliteFunctions:
         if not(bool(duration) ^ bool(start_date and end_date)):
             raise Exception('Provide either only a duration or both a start and end date')
         elif not start_date:
-            start_date  = now
+            start_date  = now_UTC
             duration    = duration * 86400.
         elif not duration:
             duration    = end_date.shiftedBy(.1).durationFrom(start_date)
@@ -260,7 +326,7 @@ class SatelliteFunctions:
 
         return pvs
 
-    def propagateNumerical(self, sat, resolution, **kwargs):
+    def propagateNumerical(self, sat, resolution, **kwargs): # TODO: Update sat_data from dictionary to dataframe
         '''
         Propagates the satellite's orbit using numerical propagation
 
@@ -275,7 +341,7 @@ class SatelliteFunctions:
                 Provide either duration or start AND end
 
                     duration: float
-                        Number of days from now to propagate the orbit
+                        Number of days from now_UTC to propagate the orbit
 
                     start: AbsoluteDate
                         The start date to propagate the orbit from
@@ -295,7 +361,7 @@ class SatelliteFunctions:
         if not(bool(duration) ^ bool(start_date and end_date)):
             raise Exception('Provide either only a duration or both a start and end date')
         elif not start_date:
-            start_date  = now
+            start_date  = now_UTC
             duration    = duration * 86400.
         elif not duration:
             duration    = end_date.shiftedBy(.1).durationFrom(start_date)
@@ -328,7 +394,7 @@ class SatelliteFunctions:
 
         return pvs
     
-    def propagateNumerical2(self, sat, resolution, **kwargs):
+    def propagateNumerical2(self, sat, resolution, **kwargs): # TODO: Update sat_data from dictionary to dataframe
         '''
         Propagates the satellite's orbit using numerical propagation
 
@@ -343,7 +409,7 @@ class SatelliteFunctions:
                 Provide either duration or start AND end
 
                     duration: int or float
-                        Number of days from now to propagate the orbit
+                        Number of days from now_UTC to propagate the orbit
 
                     start: AbsoluteDate
                         The start date to propagate the orbit from
@@ -363,7 +429,7 @@ class SatelliteFunctions:
         if not(bool(duration) ^ bool(start_date and end_date)):
             raise Exception('Provide either only a duration or both a start and end date')
         elif not start_date:
-            start_date  = now
+            start_date  = now_UTC
             duration    = duration * 86400.
         elif not duration:
             duration    = end_date.shiftedBy(.1).durationFrom(start_date)
