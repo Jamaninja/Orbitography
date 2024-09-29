@@ -6,7 +6,7 @@ Satellite_Database/
 .vscode/
 orekit-data.zip
 .env
-Propagation_Data.pkl
+Propagation_Data.json
 Metadata.json
 tle.txt
 gpt3_1.grd
