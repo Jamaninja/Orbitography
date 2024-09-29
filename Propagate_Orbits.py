@@ -10,8 +10,8 @@ import json
 
 def importDatabase(database_path):
     sat_data        = pd.read_json(database_path).filter(['OBJECT_NAME', 'OBJECT_TYPE', 'TLE_LINE1', 'TLE_LINE2'])
-    sat_data['TLE'] = sat_data[['TLE_LINE1', 'TLE_LINE2']].apply(lambda x: (x.iloc[0], x.iloc[1]), axis=1)    # Combines most recent TLE values from TLE_LINE1 and TLE_LINE2 
-    sat_data        = sat_data.drop(['TLE_LINE1', 'TLE_LINE2'], axis=1)                                             # into a tuple in a new column TLE
+    sat_data['TLE'] = sat_data[['TLE_LINE1', 'TLE_LINE2']].apply(lambda x: (x.iloc[0], x.iloc[1]), axis=1)  # Combines most recent TLE values from TLE_LINE1 and TLE_LINE2 
+    sat_data        = sat_data.drop(['TLE_LINE1', 'TLE_LINE2'], axis=1)                                     # into a tuple in a new column TLE
 
     return sat_data
 
@@ -23,7 +23,7 @@ def propagateOrbits(sat_data):
     print('Propagating orbits...')
     prop_data['pvs']        = [sf.propagateTLE(sat=sat, resolution=300., duration=.25) for sat in sat_data.index]
     print('Extracting epochs...')
-    prop_data.update(sat_data['TLE'].apply(lambda x: sf.toTLE(x).getDate()))
+    prop_data['epoch']      = sat_data['TLE'].apply(lambda x: absolutedate_to_datetime(sf.toTLE(x).getDate()).strftime('%Y/%m/%d %H:%M:%S.%f'))
 
     print('Calculating positions...')
     prop_data['pos']        = prop_data['pvs'].apply(lambda pvs: list(map(lambda pv: pv.getPosition(), pvs)))
@@ -77,4 +77,4 @@ updateMetadata(prop_data)
 
 print('Tracing orbits...')
 pf = PlotFunctions(prop_data_file='Propagation_Data.json')
-pf.plotOrbits(metadata_file='Metadata.json')
+pf.plotOrbits(metadata_file=metadata_file, limit=1000)
