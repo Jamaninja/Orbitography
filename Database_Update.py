@@ -84,8 +84,8 @@ else:
     new_sats = ephem_data[~ephem_data.index.isin(sat_data.index)]
     sat_data = pd.concat([sat_data, new_sats])
 
-    sat_data.to_json(db.path['database']['path'])
-    sat_data.to_csv(f'{db.path['database']['path'].split('.')[0]}.csv')
+    sat_data.to_json(db.path['database'])
+    sat_data.to_csv(f'{db.path['database'].split('.')[0]}.csv')
     print('Database updated.')
 
     output_log = ('Update Log.'                            # TODO: Finish writing output log

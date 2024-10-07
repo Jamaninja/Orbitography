@@ -32,16 +32,13 @@ from PIL import Image
 from dotenv import load_dotenv
 load_dotenv()
 
-script_path = os.path.dirname(os.path.abspath(__file__))
-os.chdir(script_path)
-
 now_UTC     = datetime.now(UTC)
 now_UTC     = datetime_to_absolutedate(now_UTC - timedelta(seconds=now_UTC.second, microseconds=now_UTC.microsecond))
 
 class DatabaseFunctions:
     def __init__(self):
         with open('Metadata.json', 'r') as file:
-            self.path    = json.load(file)['path']
+            self.path = json.load(file)['path']
 
     def downloadEphemerides(self, date_range='>now-30'):
         '''
