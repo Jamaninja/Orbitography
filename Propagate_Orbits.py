@@ -5,7 +5,7 @@ setup_orekit_curdir()
 
 import pandas as pd
 import numpy as np
-from Orbitography_Functions import SatelliteFunctions, PlotFunctions
+from Orbitography_Functions import SatelliteFunctions, PlotFunctions, now_UTC
 import json
 
 def importDatabase(database_path):
@@ -15,15 +15,15 @@ def importDatabase(database_path):
 
     return sat_data
 
-def propagateOrbits(sat_data):
+def propagateOrbits(sat_data, resolution, duration):
     sf                      = SatelliteFunctions(sat_data=sat_data)
     prop_data               = pd.DataFrame(columns=['object_name',  'object_type', 'pvs', 'pos', 'gps', 'x', 'y', 'z', 'radius', 'latitude', 'longitude', 'epoch'], index=sat_data.index)
     prop_data[['object_name', 'object_type']] = sat_data[['OBJECT_NAME', 'OBJECT_TYPE']]
 
     print('Propagating orbits...')
-    prop_data['pvs']        = [sf.propagateTLE(sat=sat, resolution=300., duration=.25) for sat in sat_data.index]
+    prop_data['pvs']        = [sf.propagateTLE(sat=sat, resolution=resolution, duration=duration) for sat in sat_data.index]
     print('Extracting epochs...')
-    prop_data['epoch']      = sat_data['TLE'].apply(lambda x: absolutedate_to_datetime(sf.toTLE(x).getDate()).strftime('%Y/%m/%d %H:%M:%S.%f'))
+    prop_data['epoch']      = sat_data['TLE'].apply(lambda tle: absolutedate_to_datetime(sf.toTLE(tle).getDate()).strftime('%Y/%m/%d %H:%M:%S.%f'))
 
     print('Calculating positions...')
     prop_data['pos']        = prop_data['pvs'].apply(lambda pvs: list(map(lambda pv: pv.getPosition(), pvs)))
@@ -46,12 +46,24 @@ def propagateOrbits(sat_data):
     print('Calculating longitudes...')
     prop_data['longitude']  = prop_data['gps'].apply(lambda gps: list(map(lambda gp: np.degrees(gp.longitude), gps)))
 
-    prop_data.drop(['pvs', 'pos', 'gps'], axis=1).to_json('Propagation_Data.json')
-    return prop_data
+    #prop_data.drop(['pvs', 'pos', 'gps'], axis=1).to_json('Propagation_Data.json')
 
-def updateMetadata(prop_data):
-    datetimes   = [absolutedate_to_datetime(pv.getDate()) for pv in prop_data.iloc[0]['pvs']]
-    objects     = {
+    dt_data = {
+        'start':    str(now_UTC),
+        'timestep': resolution,
+        'steps':    int(duration * 86400 / resolution)
+    }
+    
+    return dt_data
+
+with open((metadata_file := 'Metadata.json'), 'r') as file:
+    metadata = json.load(file)
+
+sat_data    = importDatabase(metadata['path']['database'])
+dt_data     = propagateOrbits(sat_data, 300., .25)
+
+# Update metadata.json
+metadata['objects']     = {
     'PAYLOAD'       : True,
     'ROCKET BODY'   : False,
     'DEBRIS'        : False,
@@ -59,22 +71,13 @@ def updateMetadata(prop_data):
     'OTHER'         : False
     }
 
-    with open((metadata_file := 'Metadata.json'), 'r') as file:
-        metadata = json.load(file)
+metadata['datetimes']   = dt_data
 
-    metadata['objects']     = objects
-    metadata['datetimes']   = [dt.strftime('%Y-%m-%d %H:%M:%S') for dt in datetimes]
+with open(metadata_file, 'w') as file:
+    json.dump(metadata, file)
 
-    with open(metadata_file, 'w') as file:
-        json.dump(metadata, file)
-
-with open((metadata_file := 'Metadata.json'), 'r') as file:
-    metadata = json.load(file)
-
-sat_data    = importDatabase(metadata['path']['database'])
-prop_data   = propagateOrbits(sat_data)
-updateMetadata(prop_data)
-
-print('Tracing orbits...')
-pf = PlotFunctions(prop_data_file='Propagation_Data.json')
-pf.plotOrbits(metadata_file=metadata_file, limit=1000)
+# Plot propagation data if desired
+if True:
+    print('Tracing orbits...')
+    pf = PlotFunctions(prop_data_file='Propagation_Data.json')
+    pf.plotOrbits(metadata_file=metadata_file, limit=100)

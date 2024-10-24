@@ -191,13 +191,17 @@ class PlotFunctions:
         rendered_prop_data = self.prop_data[self.prop_data['object_type'].isin([key for key, value in metadata['objects'].items() if value])]
         if limit:
             rendered_prop_data = rendered_prop_data.iloc[:limit]
-        dts         = metadata['datetimes']
 
-        lat_lambda  = lambda x: 'N' if x >= 0 else 'S'
-        lon_lambda  = lambda x: 'E' if x >= 0 else 'W'
+        datetimes   = metadata['datetimes']
+        dt_start    = datetime.strptime(datetimes['start'], '%Y-%m-%dT%H:%M:%S.%fZ')
+        dt_timestep = datetimes['timestep']
+        dt_steps    = datetimes['steps']
+        dts = [(dt_start + timedelta(seconds=dt_timestep * t)).strftime('%Y-%m-%d %H:%M:%S') for t in range(0, dt_steps)]
 
-        n       = 0
-        length  = len(rendered_prop_data)
+        lat_lambda  = lambda lat: 'N' if lat >= 0 else 'S'
+        lon_lambda  = lambda lon: 'E' if lon >= 0 else 'W'
+
+        n = 0
         for sat in rendered_prop_data.index:
             lats, lons, rs = rendered_prop_data.loc[sat, ['latitude', 'longitude', 'radius']]
             epoch = self.getEpochDelta(sat)
@@ -223,8 +227,8 @@ class PlotFunctions:
                                             text            = text
                                             ))
             n += 1
-            if not n % 50:
-                print(f'Tracing orbits:  {n/length:06.2%}')
+            if not n % 25 and n != limit:
+                print(f'Tracing orbits:  {n/limit:06.2%}')
         print('Tracing orbits: 100.00%')
 
         trace_earth = self.plotEarth()
