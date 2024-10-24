@@ -217,9 +217,9 @@ class PlotFunctions:
                 ) for lat, lon, r, dt in zip(lats, lons, rs, dts)
                 ]
 
-            trace_orbit.append(go.Scatter3d(x               = rendered_prop_data.loc[sat, 'x'],
-                                            y               = rendered_prop_data.loc[sat, 'y'],
-                                            z               = rendered_prop_data.loc[sat, 'z'],
+            trace_orbit.append(go.Scatter3d(x               = rendered_prop_data.loc[sat, 'pos_x'],
+                                            y               = rendered_prop_data.loc[sat, 'pos_y'],
+                                            z               = rendered_prop_data.loc[sat, 'pos_z'],
                                             marker          = dict(size=0.5),
                                             line            = dict(color='white',width=1),
                                             hoverinfo       = 'text',
