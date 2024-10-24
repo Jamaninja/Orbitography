@@ -22,14 +22,14 @@ def updateEphemerides(manual=False):
     '''
 
     if os.path.exists(db.path['ephemerides']):
-        ctime = datetime.fromtimestamp(os.path.getctime(db.path['ephemerides']))
+        mtime = datetime.fromtimestamp(os.path.getmtime(db.path['ephemerides']))
         if manual:
-            if (ctime_delta := (now_local - ctime).total_seconds()/86400) >= 1:
-                ctime_delta = f'{ctime_delta:.1f} days'
+            if (mtime_delta := (now_local - mtime).total_seconds()/86400) >= 1:
+                mtime_delta = f'{mtime_delta:.1f} days'
             else:
-                ctime_delta = f'{ctime_delta*24:.1f} hours'
+                mtime_delta = f'{mtime_delta*24:.1f} hours'
 
-            print((f'Ephemerides data already exists. Current data is {ctime_delta} old.\n'
+            print((f'Ephemerides data already exists. Current data is {mtime_delta} old.\n'
                     'Would you like to:'))
             while (epheremides_case := input((
                 '[1] Backup the current ephemerides data before updating\n'
@@ -42,15 +42,15 @@ def updateEphemerides(manual=False):
             
             match epheremides_case:
                 case '1':
-                    os.rename(db.path['ephemerides'], f'{db.path['ephemerides'].split('.')[0]}_Backup_{ctime.strftime('%Y-%m-%d_%H-%M-%S')}.json')
+                    os.rename(db.path['ephemerides'], f'{db.path['ephemerides'].split('.')[0]}_Backup_{mtime.strftime('%Y-%m-%d_%H-%M-%S')}.json')
                 case '3':
                     return 3
         
         else: # Automatic update
-            os.rename(db.path['ephemerides'], f'{db.path['ephemerides'].split('.')[0]}_Backup_{ctime.strftime('%Y-%m-%d_%H-%M-%S')}.json')
+            os.rename(db.path['ephemerides'], f'{db.path['ephemerides'].split('.')[0]}_Backup_{mtime.strftime('%Y-%m-%d_%H-%M-%S')}.json')
 
         print('Downloading recent ephemerides data from Space-Track.org.')        
-        response = db.downloadEphemerides(date_range=ctime.strftime('%Y-%m-%d%%20%H:%M:%S--now'))
+        response = db.downloadEphemerides(date_range=mtime.strftime('%Y-%m-%d%%20%H:%M:%S--now'))
         
     else: # If there is no existing ephemerides data
         print('Downloading 30-day ephemerides data from Space-Track.org.')
@@ -77,15 +77,15 @@ else:
     sat_data = pd.read_json(db.path['database'])
 
     if backup:
-        ctime = datetime.fromtimestamp(os.path.getctime(db.path['database']))
-        os.rename(db.path['database'], f'{db.path['database'].split('.')[0]}_Backup_{ctime.strftime('%Y-%m-%d_%H-%M-%S')}.json')
+        mtime = datetime.fromtimestamp(os.path.getmtime(db.path['database']))
+        os.rename(db.path['database'], f'{db.path['database'].split('.')[0]}_Backup_{mtime.strftime('%Y-%m-%d_%H-%M-%S')}.json')
 
     sat_data.update(ephem_data)
     new_sats = ephem_data[~ephem_data.index.isin(sat_data.index)]
     sat_data = pd.concat([sat_data, new_sats])
 
-    sat_data.to_json(db.path['database']['path'])
-    sat_data.to_csv(f'{db.path['database']['path'].split('.')[0]}.csv')
+    sat_data.to_json(db.path['database'])
+    sat_data.to_csv(f'{db.path['database'].split('.')[0]}.csv')
     print('Database updated.')
 
     output_log = ('Update Log.'                            # TODO: Finish writing output log
