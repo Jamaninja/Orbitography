@@ -34,22 +34,38 @@ for step, dt in enumerate(dts):
     payload_data['quad_z'] = [z[step]//d_pos[2] for z in payload_data['pos_z']]
 
     qx = payload_data['quad_x'].sort_values()
-    unique_qx = qx.unique()
-    qx_count = [qx.where(qx==n).count() for n in unique_qx]
+    pot_col = []
 
-    y_check = []
+    i = 0
+    lx = len(qx)
+    while i < lx:
+        i0 = i
+        i+=1
+        while qx.iloc[i] - qx.iloc[i0] <= 1 and i < lx:
+            i+=1
+        if i - i0 > 1:
+            y_check = qx.iloc[i0:i].index
+            qy = payload_data.loc[y_check, 'quad_y'].sort_values()
 
-    for u, c in zip(unique_qx, qx_count):
-        if c == 1:
-            if u+1 in unique_qx:
-                y_check.append(u)
-        else:
-            y_check.append(u)
-    
-    for n in y_check:
-        qy = payload_data['quad_y'].where(payload_data['quad_x'] in [n, n+1]).sort_values
-        input()
-    input()
-    
-    
-#pot_col = []
+            j = 0
+            ly = len(qy)
+            while j < ly:
+                j0 = j
+                j+=1
+                while qy.iloc[j] - qy.iloc[j0] <= 1 and j < ly:
+                    j+=1
+                if j - j0 > 1:
+                    z_check = qy.iloc[j0:j].index
+                    qz = payload_data.loc[z_check, 'quad_z'].sort_values()
+
+                    k = 0
+                    lz = len(qz)
+                    while k < lz:
+                        k0 = k
+                        k+=1
+                        while qz.iloc[k] - qz.iloc[k0] <=1 and k < lz:
+                            k+=1
+                        if k - k0 > 1:
+                            pot_col.append(qz.iloc[k0:k].index)
+
+print(pot_col)
