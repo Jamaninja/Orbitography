@@ -92,5 +92,3 @@ else:
                  f'Date: {now_local.strftime('%Y-%m-%d')}'
                  f'Time: {now_local.strftime('%H:%M:%S UTC')}'
                  f'{len(ephem_data)} objects added.')
-
-input('Press enter to exit.')
