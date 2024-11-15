@@ -1,6 +1,6 @@
 import orekit
 vm = orekit.initVM()
-from orekit.pyhelpers import setup_orekit_curdir, datetime_to_absolutedate
+from orekit.pyhelpers import setup_orekit_curdir, datetime_to_absolutedate, absolutedate_to_datetime
 setup_orekit_curdir()
 
 from orekit import JArray_double
@@ -22,15 +22,15 @@ from org.orekit.orbits import OrbitType, CartesianOrbit # type: ignore
 from org.orekit.time import TimeScalesFactory, AbsoluteDate # type: ignore
 from org.orekit.utils import IERSConventions, Constants # type: ignore
 
-from java.util import Arrays # type: ignore
 from java.io import File # type: ignore
+from java.util import Arrays # type: ignore
 
-import pandas as pd
-import numpy as np
-import os
 import json
+import os
 import requests
 import time
+import numpy as np
+import pandas as pd
 import plotly.graph_objs as go
 
 from datetime import datetime, timedelta, UTC
@@ -97,7 +97,7 @@ class DatabaseFunctions:
 
         return json.loads(response.text)
 
-class PlotFunctions:
+class PlotOrbit:
     def __init__(self, prop_data_file):
         self.prop_data = pd.read_json(prop_data_file)
 
@@ -181,7 +181,7 @@ class PlotFunctions:
         Returns:
             TimeDelta of time since epoch
         '''
-        epoch = datetime_to_absolutedate(datetime.strptime(self.prop_data.loc[sat, 'EPOCH'], '%Y/%m/%d %H:%M:%S.%f'))
+        epoch = datetime_to_absolutedate(datetime.strptime(self.prop_data.EPOCH[sat], '%Y/%m/%d %H:%M:%S.%f'))
         return timedelta(seconds = now_UTC.durationFrom(epoch))
 
     def plotOrbits(self, metadata_file, limit=0):
@@ -209,7 +209,8 @@ class PlotFunctions:
         n = 0
         for sat in rendered_prop_data.index:
             lats, lons, rs = rendered_prop_data.loc[sat, ['LATITUDE', 'LONGITUDE', 'RADIUS']]
-            epoch = self.getEpochDelta(sat)
+            epoch_delta = self.getEpochDelta(sat)
+
             text = [(                                                                                                       # Defines label text when hovering over orbits
                 f'{rendered_prop_data.loc[sat, 'OBJECT_NAME']} ({sat})<br>'                                                 # Satellite name and NORAD CAT ID
                 f'{'-'*56}<br>'                                                                                             # -----
@@ -218,7 +219,7 @@ class PlotFunctions:
                 f'Radius (Alt): {r/1000:.2f} km ({(r - Constants.WGS84_EARTH_EQUATORIAL_RADIUS)/1000:.2f} km)<br>'          # Orbital radius & height (km)
                 f'{'-'*56}<br>'                                                                                             # -----
                 f'{dt} UTC<br>'                                                                                             # Date & time (UTC)
-                f'{epoch} since epoch'                                                                                      # Time since epoch TODO: Format time to DD days HHh, MMm, SSs
+                f'{epoch_delta} since epoch'                                                                                # Time since epoch TODO: Format time to DD days HHh, MMm, SSs
                 ) for lat, lon, r, dt in zip(lats, lons, rs, dts)
                 ]
 
@@ -253,10 +254,9 @@ class PlotFunctions:
                         )
         fig.show()
 
-class SatelliteFunctions:
+class SatellitePropagation:
 
-    def __init__(self, **kwargs):
-        self.sat_data   = kwargs.get('sat_data')
+    def __init__(self):
         self.eme2000    = FramesFactory.getEME2000()
         self.itrf       = FramesFactory.getITRF(IERSConventions.IERS_2010, True)
         self.gcrf       = FramesFactory.getGCRF()
@@ -268,24 +268,25 @@ class SatelliteFunctions:
     
     def toTLE(self, sat_tle_tuple):
         return TLE(sat_tle_tuple[0], sat_tle_tuple[1])
-
-    def initialOrbitTLE(self, sat_tle):
+    
+    def importTLE(self, database_path):
         '''
-        Initialises a Cartesian orbit of an object, using TLE data
+            Imports TLE data from a local database
 
-        Args:
-            sat_tle: 
-                TLE data of desired satellite
-        
-        Returns:
-            Cartesian orbit of desired satellite at epoch
+            Args:
+                database_path: str
+                    Location of the JSON database containing the satellites' ephemerides
+            
+            Returns:
+                TLE_data: DataFrame
+                    Dataframe of satellites containing OBJECT_NAME, OBJECT_TYPE, and TLE, indexed by NORAD_ID
         '''
-        propagator      = TLEPropagator.selectExtrapolator(sat_tle, self.eme2000)
-        epoch           = sat_tle.getDate()
-        pv              = propagator.getPVCoordinates(epoch)
-        initial_orbit   = CartesianOrbit(pv, self.eme2000, epoch, Constants.WGS84_EARTH_MU)
 
-        return initial_orbit
+        TLE_data        = pd.read_json(database_path).filter(['OBJECT_NAME', 'OBJECT_TYPE', 'TLE_LINE1', 'TLE_LINE2', 'MASS', 'CROSS_SECTIONAL_AREA'])
+        TLE_data['TLE'] = TLE_data[['TLE_LINE1', 'TLE_LINE2']].apply(lambda tle: (tle.iloc[0], tle.iloc[1]), axis=1) # Combines most recent TLE values from TLE_LINE1 and TLE_LINE2 
+        TLE_data.drop(['TLE_LINE1', 'TLE_LINE2'], axis=1, inplace=True)                                              # into a tuple in a new column TLE
+
+        return TLE_data
 
     def propagateTLE(self, sat, resolution, **kwargs):
         '''
@@ -327,7 +328,7 @@ class SatelliteFunctions:
         elif not duration:
             duration    = end_date.shiftedBy(.1).durationFrom(start_date)
 
-        propagator  = TLEPropagator.selectExtrapolator(self.toTLE(self.sat_data.loc[sat, 'TLE']))
+        propagator  = TLEPropagator.selectExtrapolator(self.toTLE(sat.TLE))
         t           = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
         pvs         = [propagator.propagate(tt).getPVCoordinates() for tt in t]
 
@@ -348,9 +349,13 @@ class SatelliteFunctions:
                     duration    = duration * 86400.
                 elif not duration:
                     duration    = end_date.shiftedBy(.1).durationFrom(start_date)
+
+                sat_tle         = self.toTLE(sat.TLE)
+                epoch           = sat_tle.getDate()
+                pv              = TLEPropagator.selectExtrapolator(sat_tle, self.eme2000).getPVCoordinates(epoch)
+                initial_orbit   = CartesianOrbit(pv, self.eme2000, epoch, Constants.WGS84_EARTH_MU)
                 
-                initial_orbit   = self.initialOrbitTLE(self.toTLE(self.sat_data.loc[sat, 'TLE'])) # Defines initial Cartesian orbit using latest TLE data
-                sat_mass        = float(self.sat_data.loc[sat, 'MASS'])
+                sat_mass        = float(sat.MASS)
                 initial_state   = SpacecraftState(initial_orbit, sat_mass)
                 tolerances      = NumericalPropagator.tolerances(self.pos_tolerance, initial_orbit, OrbitType.CARTESIAN)
 
@@ -370,11 +375,11 @@ class SatelliteFunctions:
                 propagator.addForceModel(self.relativity)
 
                 CR = 1.0 # Coefficient of Radiation Pressure
-                CS = float(self.sat_data.loc[sat, 'CROSS_SECTION'])
-                propagator.addForceModel(SolarRadiationPressure(self.sun, self.wgs84_ellipsoid, IsotropicRadiationSingleCoefficient(CS, CR)))
+                SA = float(sat.CROSS_SECTIONAL_AREA)
+                propagator.addForceModel(SolarRadiationPressure(self.sun, self.wgs84_ellipsoid, IsotropicRadiationSingleCoefficient(SA, CR)))
 
                 CD = 2.0 # Coefficient of Drag
-                propagator.addForceModel(DragForce(self.atmosphere, IsotropicDrag(CS, CD)))
+                propagator.addForceModel(DragForce(self.atmosphere, IsotropicDrag(SA, CD)))
 
                 t   = [start_date.shiftedBy(float(dt)) for dt in np.arange(0, duration, resolution)]
                 pvs = [propagator.propagate(tt).getPVCoordinates() for tt in t]
@@ -401,3 +406,41 @@ class SatelliteFunctions:
             
             self.__class__.propagateNumerical.called = True
             self.__class__.propagateNumerical(self, sat, resolution, **kwargs)
+
+    def extractPropagationData(self, prop_data, batch_prog=''):
+
+        print(f'{batch_prog}Extracting epochs...')
+        prop_data['EPOCH']     = prop_data.TLE.apply(lambda tle: absolutedate_to_datetime(self.toTLE(tle).getDate()).strftime('%Y/%m/%d %H:%M:%S.%f'))
+
+        print(f'{batch_prog}Calculating positions...')
+        prop_data['POS']       = prop_data.PVS.apply(lambda pvs: list(map(lambda pv: pv.getPosition(), pvs)))
+        print(f'{batch_prog}┠╴Extracting x coordinates...')
+        prop_data['POS_x']     = prop_data.POS.apply(lambda pos: list(map(lambda p: p.x, pos))) # \
+        print(f'{batch_prog}┠╴Extracting y coordinates...')                                        #  \
+        prop_data['POS_y']     = prop_data.POS.apply(lambda pos: list(map(lambda p: p.y, pos))) # --> TODO: Condense into single statement
+        print(f'{batch_prog}┖╴Extracting z coordinates...')                                        #  /
+        prop_data['POS_z']     = prop_data.POS.apply(lambda pos: list(map(lambda p: p.z, pos))) # /
+
+        # prop_data[['x', 'y', 'z']] = prop_data['PVS'].apply(lambda pvs: list(map(lambda pos: [pos.x, pos.y, pos.z], list(map(lambda pv: pv.getPosition(), pvs)))))
+
+        print(f'{batch_prog}Calculating radii...')
+        prop_data['RADIUS']    = prop_data.POS.apply(lambda pos: list(map(lambda p: np.sqrt(p.x**2 + p.y**2 + p.z**2), pos)))
+
+        print(f'{batch_prog}Calculating velocities...')
+        prop_data['VEL']       = prop_data.PVS.apply(lambda pvs: list(map(lambda pv: pv.getVelocity(), pvs)))
+        print(f'{batch_prog}┠╴Extracting x components...')
+        prop_data['VEL_x']     = prop_data.VEL.apply(lambda vel: list(map(lambda v: v.x, vel)))
+        print(f'{batch_prog}┠╴Extracting y components...')
+        prop_data['VEL_y']     = prop_data.VEL.apply(lambda vel: list(map(lambda v: v.y, vel)))
+        print(f'{batch_prog}┖╴Extracting z components...')
+        prop_data['VEL_z']     = prop_data.VEL.apply(lambda vel: list(map(lambda v: v.z, vel)))
+
+        print(f'{batch_prog}Calculating groundpoints...')
+        prop_data['GPS']       = prop_data.PVS.apply(lambda pvs: list(map(lambda pv: self.earth(self.eme2000).transform(pv.position, self.eme2000, pv.date), pvs)))
+        print(f'{batch_prog}┠╴Extracting latitudes...')
+        prop_data['LATITUDE']  = prop_data.GPS.apply(lambda gps: list(map(lambda gp: np.degrees(gp.latitude), gps)))
+        print(f'{batch_prog}┖╴Extracting longitudes...')
+        prop_data['LONGITUDE'] = prop_data.GPS.apply(lambda gps: list(map(lambda gp: np.degrees(gp.longitude), gps)))
+
+        prop_data.drop(['TLE', 'PVS', 'POS', 'VEL', 'GPS'], axis=1, inplace=True)
+        return prop_data
